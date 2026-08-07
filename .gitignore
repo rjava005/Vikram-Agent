@@ -3,9 +3,31 @@
 CODEX_PROMPT.md
 PLANS.md
 agent_api_example.py
-services/
-plans/
-docs/
-apps/
 .codex/
 AGENTS_README.md
+
+# Local runtime state and generated output
+.vikram/
+.venv/
+.uv-cache/
+node_modules/
+dist/
+out/
+coverage/
+playwright-report/
+test-results/
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.ruff_cache/
+.mypy_cache/
+
+# Local editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
