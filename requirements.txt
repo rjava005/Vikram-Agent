@@ -1,1 +1,3 @@
-openai>=1.57.2
+# Compatibility entry point. The locked contributor setup uses:
+#   uv sync --project services/api --extra dev
+-e ./services/api

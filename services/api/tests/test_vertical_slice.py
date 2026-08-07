@@ -46,6 +46,14 @@ def test_complete_markdown_vertical_slice(api_client: TestClient) -> None:
         "line_end": 2,
     }
 
+    unsupported = api_client.post(
+        f"/api/v1/projects/{project['id']}/answers",
+        json={"question": "Where is the lunar launch site?"},
+    )
+    assert unsupported.status_code == 201
+    assert unsupported.json()["grounding"] == "insufficient_evidence"
+    assert unsupported.json()["citations"] == []
+
     for feedback_status in ("understood", "unclear", "review_later"):
         feedback = api_client.put(
             f"/api/v1/answers/{answer['id']}/feedback", json={"status": feedback_status}
@@ -106,8 +114,38 @@ def test_rejects_unsupported_import_and_stale_focus_revision(api_client: TestCli
     focus = api_client.post(
         f"/api/v1/tasks/{task['id']}/focus-sessions", json={"duration_minutes": 25}
     ).json()
+    duplicate = api_client.post(
+        f"/api/v1/tasks/{task['id']}/focus-sessions", json={"duration_minutes": 25}
+    )
+    assert duplicate.status_code == 409
     stale = api_client.post(
         f"/api/v1/focus-sessions/{focus['id']}/transitions",
         json={"transition": "pause", "expected_revision": 99},
     )
     assert stale.status_code == 409
+
+
+def test_requires_capability_and_rejects_whitespace(api_client: TestClient) -> None:
+    unauthorized = api_client.get(
+        "/api/v1/projects",
+        headers={"Origin": "null", "X-Vikram-Token": ""},
+    )
+    assert unauthorized.status_code == 401
+    assert unauthorized.headers["content-type"].startswith("application/problem+json")
+
+    assert api_client.post("/api/v1/projects", json={"name": "   "}).status_code == 422
+    project = api_client.post("/api/v1/projects", json={"name": "Validation"}).json()
+    assert (
+        api_client.post(
+            f"/api/v1/projects/{project['id']}/answers", json={"question": "  \t  "}
+        ).status_code
+        == 422
+    )
+
+    missing_project = "123e4567-e89b-42d3-a456-426614174099"
+    rejected_import = api_client.post(
+        f"/api/v1/projects/{missing_project}/sources",
+        files={"file": ("orphan.md", b"# Must not persist\nprivate", "text/markdown")},
+    )
+    assert rejected_import.status_code == 404
+    assert list(api_client.app.state.settings.blob_dir.rglob("*")) == []

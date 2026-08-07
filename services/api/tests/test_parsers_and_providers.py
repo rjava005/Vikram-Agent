@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
 from vikram_api.providers.fake import DeterministicEmbeddingProvider
+from vikram_api.providers.interfaces import LocalBlobStorage
 from vikram_api.providers.parsers import MarkdownParser, PdfParser
 
 
@@ -52,3 +56,13 @@ def test_fake_embeddings_are_deterministic() -> None:
     second = provider.embed("phase margin", 1)
     assert first == second
     assert len(first) == provider.dimensions
+
+
+def test_content_addressed_storage_handles_parallel_identical_writes(tmp_path: Path) -> None:
+    storage = LocalBlobStorage(tmp_path / "blobs")
+    content = b"private engineering evidence"
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        keys = list(executor.map(lambda _: storage.put(content, 1), range(8)))
+    assert len(set(keys)) == 1
+    assert storage.read(keys[0], 1) == content
+    assert list((tmp_path / "blobs").rglob("*.tmp")) == []

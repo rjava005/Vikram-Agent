@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8742, ge=1024, le=65535)
     provider_mode: str = "fake"
+    api_token: str = Field(default="", max_length=256)
     allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173,null"
     max_source_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
     provider_timeout_seconds: float = Field(default=8.0, gt=0, le=60)

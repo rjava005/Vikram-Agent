@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from vikram_api.domain.models import Evidence, ModelAnswer, ParsedEvidence, RetrievedEvidence
 
@@ -82,9 +83,16 @@ class LocalBlobStorage:
         target = self.root / "sha256" / digest
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
-            temporary = target.with_suffix(".tmp")
-            temporary.write_bytes(content)
-            temporary.replace(target)
+            temporary = target.with_name(f".{digest}.{uuid4().hex}.tmp")
+            try:
+                temporary.write_bytes(content)
+                try:
+                    temporary.replace(target)
+                except PermissionError:
+                    if not target.exists():
+                        raise
+            finally:
+                temporary.unlink(missing_ok=True)
         return key
 
     def read(self, key: str, timeout_seconds: float) -> bytes:

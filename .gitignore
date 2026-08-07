@@ -1,7 +1,6 @@
 *.log
 *.env
 CODEX_PROMPT.md
-PLANS.md
 agent_api_example.py
 .codex/
 AGENTS_README.md
@@ -11,6 +10,8 @@ AGENTS_README.md
 .venv/
 .uv-cache/
 node_modules/
+.corepack/
+.pnpm-store/
 dist/
 out/
 coverage/

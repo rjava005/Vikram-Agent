@@ -39,10 +39,12 @@ class SqliteRepository:
             connection.close()
 
     def migrate(self) -> None:
-        with self.connect() as connection:
+        connection = self.connect()
+        try:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
             )
+            connection.commit()
             applied = {
                 row["version"]
                 for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
@@ -50,11 +52,21 @@ class SqliteRepository:
             for migration in sorted(self.migrations_dir.glob("*.sql")):
                 if migration.stem in applied:
                     continue
-                connection.executescript(migration.read_text(encoding="utf-8"))
-                connection.execute(
-                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (migration.stem, datetime.now(UTC).isoformat()),
+                version = migration.stem.replace("'", "''")
+                applied_at = datetime.now(UTC).isoformat().replace("'", "''")
+                connection.executescript(
+                    "BEGIN IMMEDIATE;\n"
+                    f"{migration.read_text(encoding='utf-8')}\n"
+                    "INSERT INTO schema_migrations(version, applied_at) "
+                    f"VALUES ('{version}', '{applied_at}');\n"
+                    "COMMIT;"
                 )
+        except Exception:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def create_project(self, project_id: str, name: str, created_at: str) -> dict[str, Any]:
         with self.transaction() as connection:
@@ -254,11 +266,23 @@ class SqliteRepository:
         self, *, focus_id: str, task_id: str, duration_seconds: int, now: str
     ) -> dict[str, Any]:
         with self.transaction() as connection:
-            if (
-                connection.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone()
-                is None
-            ):
+            task = connection.execute(
+                "SELECT project_id, status FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if task is None:
                 raise NotFoundError("Task not found.")
+            if task["status"] == "completed":
+                raise ConflictError("A completed task cannot start a new focus session.")
+            active = connection.execute(
+                """
+                SELECT 1 FROM focus_sessions f JOIN tasks t ON t.id = f.task_id
+                WHERE t.project_id = ? AND f.status IN ('active', 'paused')
+                LIMIT 1
+                """,
+                (task["project_id"],),
+            ).fetchone()
+            if active is not None:
+                raise ConflictError("This project already has an active focus session.")
             connection.execute("UPDATE tasks SET status = 'in_progress' WHERE id = ?", (task_id,))
             connection.execute(
                 """

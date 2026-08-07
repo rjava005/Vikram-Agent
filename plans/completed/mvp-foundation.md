@@ -24,9 +24,9 @@ This plan does not add authentication or collaboration, autonomous submissions/m
 - [x] 2026-08-07 04:23Z — Read all governing documents, nested instructions, repository manifests, and supplied concepts; confirmed the repository is a planning-only skeleton.
 - [x] 2026-08-07 04:23Z — Requested independent dependency/security/licensing research plus frontend and backend implementation maps.
 - [x] 2026-08-07 05:07Z — Established tracked API packaging, v1 transport models, local schema/migrations, deterministic providers, Markdown/PDF ingestion, grounded citations, feedback/tasks, and the focus state machine; Ruff, strict mypy, and 5 tests pass.
-- [ ] 2026-08-07 04:23Z — Establish the secure Electron broker and accessible React dashboard for the complete loop.
-- [ ] 2026-08-07 04:23Z — Pass API, desktop, contract, migration, integration, and smoke checks and exercise the visible flow.
-- [ ] 2026-08-07 04:23Z — Resolve reviewer findings, reconcile docs, and record final outcomes and limitations.
+- [x] 2026-08-07 17:18Z — Established the secure Electron broker, exact renderer allowlist, visible push-to-talk states, and accessible concept-derived React dashboard for the complete loop.
+- [x] 2026-08-07 17:23Z — Passed the final combined API, desktop, contract, migration, integration, native smoke, and documented development-launch checks.
+- [x] 2026-08-07 17:18Z — Resolved the read-only review's two high and six medium findings and reconciled contributor, architecture, repository-map, and stack documentation.
 
 ## Context and repository map
 
@@ -52,7 +52,7 @@ The HTTP base is `/api/v1`. Transport payloads are validated by Pydantic on the 
 
 A citation identifies the immutable evidence unit and source version, shows a safe excerpt, and has one discriminated locator: PDF `page` (one-based) or Markdown `section` with heading and line bounds. A grounded answer may use only evidence returned by retrieval; if nothing supports the question, it returns an explicit insufficient-evidence result rather than an uncited factual answer.
 
-The preload bridge is `window.vikramDesktop.v1` with purpose-specific operations only: `chooseAndImportSource(projectId)` and `microphone.requestPermission()`. Picker cancellation is a normal discriminated result. The main process validates sender, trusted origin, project ID, extension, MIME type, file size, and API response. It never exposes `ipcRenderer`, `invoke(channel)`, `fs`, `shell`, arbitrary paths, environment variables, or credentials. The renderer is configured with `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. Navigation, new windows, external protocols, and permissions are denied unless explicitly allowlisted; microphone permission is audio-only and triggered by the visible push-to-talk control.
+The preload bridge is `window.vikramDesktop.v1` with purpose-specific values and operations only: the validated loopback API connection capability, `chooseAndImportSource(projectId)`, and `microphone.requestPermission()`. Picker cancellation is a normal discriminated result. The main process validates sender, the exact renderer target, project ID, extension, MIME type, file size, and API response. It never exposes `ipcRenderer`, `invoke(channel)`, `fs`, `shell`, arbitrary paths, general environment access, or provider credentials. The renderer is configured with `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. Navigation, new windows, external protocols, and permissions are denied unless explicitly allowlisted; microphone permission is audio-only and triggered by the visible push-to-talk control.
 
 Python provider ports cover model generation, embeddings, speech-to-text, text-to-speech, blob storage, and candidate retrieval. An Electron OS-capability port covers explicit selection and microphone permission. Provider selection is configuration-driven. The checked-in runtime defaults to deterministic fakes and starts without secrets; real adapters are not enabled in this milestone.
 
@@ -112,6 +112,8 @@ The UI is not coupled to SQLite. A later Supabase/Postgres migration can add a r
 - 2026-08-07, owner: main agent — Treat `App_Layout_v0.png` as layout direction and the Jarvis/Tron images only as unshipped mood references because their licensing and dense visual language are unsuitable for the calm accessible MVP.
 - 2026-08-07, owner: main agent — Use `electron-vite` 5 with Vite 7 for the desktop foundation. Electron Forge's Vite plugin remains experimental; the selected tool keeps main, preload, and renderer builds explicit without widening the capability boundary.
 - 2026-08-07, owner: main agent — Use BSD-3-Clause `pypdf` for initial page-level extraction instead of PyMuPDF. PyMuPDF's AGPL/commercial terms are incompatible with silently making it a default Apache-licensed dependency; OCR, layout coordinates, and complex tables remain follow-ups.
+- 2026-08-07, owner: main agent — Authenticate the loopback API with a 256-bit capability generated in memory for each canonical dev/smoke launch. Packaged `file:` renderers have an opaque `Origin: null`, so CORS alone cannot protect private evidence; the exact allowlisted renderer receives only this bounded API connection value through preload.
+- 2026-08-07, owner: main agent — Keep checked-in Zod runtime validators as the TypeScript v1 contract for this slice rather than introducing a generator dependency. Pydantic remains the server boundary, the native smoke crosses both validators, and automated OpenAPI generation is a documented follow-up.
 
 ## Discoveries
 
@@ -119,8 +121,16 @@ The UI is not coupled to SQLite. A later Supabase/Postgres migration can add a r
 - 2026-08-07 — Root `.gitignore` ignores every planned implementation and plan directory. It must be corrected before work is reviewable.
 - 2026-08-07 — The host has Node 24.13 and Python 3.14.6, but `pnpm` and `uv` are not initially available; PowerShell blocks `npm.ps1`, while `npm.cmd` may remain usable. Setup must use verified commands and record supported versions.
 - 2026-08-07 — Scanned PDFs require OCR and are explicitly outside this slice; text-based PDF parsing must fail clearly when no evidence text is extractable.
-- 2026-08-07 — FastAPI 0.139.2 currently emits a Starlette deprecation warning for `TestClient` using `httpx`; the 5 API tests pass, but this dependency transition should be monitored rather than hidden.
+- 2026-08-07 — FastAPI 0.139.2 currently emits a Starlette deprecation warning for `TestClient` using `httpx`; the 7 API tests pass, but this dependency transition should be monitored rather than hidden.
+- 2026-08-07 — Electron's sandboxed preload must be emitted as one CommonJS bundle; leaving runtime Zod imports external causes the native preload to fail even though unit tests pass.
+- 2026-08-07 — pnpm 11 replaced the old lifecycle allowlist setting with `allowBuilds`; only Electron and esbuild are permitted to run install scripts.
+- 2026-08-07 — The in-app browser had no controllable tab in this session. Native Playwright launched the real built Electron window instead and exercised the rendered workflow; visual screenshot inspection remains a manual review aid, not an unreported passing check.
+- 2026-08-07 — The reviewer found false grounding at zero retrieval support and unauthenticated opaque-origin API access. Both were release blockers: retrieval now fails closed to `insufficient_evidence`, and every versioned API request requires the per-launch capability. Atomic blob writes, exact renderer paths, isolated app construction, shared endpoint configuration, normalized external strings, and an owned ephemeral-port smoke resolved all medium findings.
 
 ## Outcome and follow-ups
 
-Implementation is in progress. On completion this section will record shipped behavior, exact passing commands, reviewer findings resolved, known platform limitations, and separately planned follow-ups such as Supabase/auth/RLS, durable ingestion jobs, real provider evaluation, packaged microphone validation, OCR, structured React Flow plans, and the later whiteboard/constellation surfaces.
+The reviewable slice is complete. `corepack pnpm format:check`, `corepack pnpm lint`, and `corepack pnpm typecheck` pass without warnings or errors. `corepack pnpm test` passes 2 contract tests, 5 desktop tests, and 7 API tests; the only emitted warning is the recorded upstream Starlette `TestClient` transition. `corepack pnpm smoke` builds the native application and passes its one full desktop-to-real-API acceptance test. The canonical `corepack pnpm dev` command also started both Electron and a healthy loopback API before the bounded launch check stopped them.
+
+The native smoke generated a 256-bit capability and nondefault ephemeral port, created the project through the rendered UI, persisted and reloaded the imported source, returned and inspected a Markdown section citation, recorded feedback, created a task, and started, paused, resumed, and completed focus. It also asserted that renderer Node globals are absent and that the preload surface contains only the versioned connection, source, and microphone capabilities. The read-only reviewer found two high and six medium issues; all were resolved and regression-tested before this outcome was recorded.
+
+Known limitations are explicit: PDF support is text-only; recorded audio is visible and safely stopped but not sent to a real provider; the local API capability is single-user process authentication, not multi-user identity/RLS; the Python wheel does not yet package migrations; and real-model claim entailment needs evaluation before an adapter can be enabled. Follow-ups are Supabase/auth/RLS, durable ingestion jobs, real provider evaluation, packaged microphone validation, OCR, generated OpenAPI clients, structured React Flow plans, and later whiteboard/constellation surfaces.

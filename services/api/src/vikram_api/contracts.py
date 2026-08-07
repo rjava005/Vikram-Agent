@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ApiModel(BaseModel):
@@ -41,6 +41,11 @@ class GroundingStatus(StrEnum):
 
 class ProjectCreate(ApiModel):
     name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: object) -> object:
+        return " ".join(value.split()) if isinstance(value, str) else value
 
 
 class ProjectResponse(ApiModel):
@@ -95,6 +100,11 @@ class CitationResponse(ApiModel):
 class AnswerCreate(ApiModel):
     question: str = Field(min_length=2, max_length=2000)
 
+    @field_validator("question", mode="before")
+    @classmethod
+    def normalize_question(cls, value: object) -> object:
+        return " ".join(value.split()) if isinstance(value, str) else value
+
 
 class AnswerResponse(ApiModel):
     id: str
@@ -123,6 +133,11 @@ class FeedbackResponse(ApiModel):
 
 class TaskFromAnswerCreate(ApiModel):
     title: str | None = Field(default=None, min_length=1, max_length=240)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: object) -> object:
+        return " ".join(value.split()) if isinstance(value, str) else value
 
 
 class TaskResponse(ApiModel):

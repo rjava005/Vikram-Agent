@@ -71,11 +71,9 @@ class DeterministicRetrievalProvider:
             lexical = len(query_tokens & item_tokens) / max(len(query_tokens), 1)
             item_vector = embedding_provider.embed(item.content, timeout_seconds)
             semantic = max(sum(a * b for a, b in zip(query_vector, item_vector, strict=True)), 0.0)
-            score = round((0.75 * lexical) + (0.25 * semantic), 8)
+            score = round((0.75 * lexical) + (0.25 * semantic), 8) if lexical > 0 else 0.0
             ranked.append(RetrievedEvidence(evidence=item, score=score))
         ranked.sort(key=lambda candidate: (-candidate.score, candidate.evidence.id))
-        if ranked and ranked[0].score == 0:
-            return ranked[:1]
         return [candidate for candidate in ranked[:limit] if candidate.score > 0]
 
 

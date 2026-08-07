@@ -1,0 +1,20 @@
+{
+  "name": "vikram",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=24.13 <25"
+  },
+  "scripts": {
+    "api:dev": "uv run --project services/api uvicorn vikram_api.main:app --host 127.0.0.1 --port 8742",
+    "api:sync": "uv sync --project services/api --extra dev",
+    "desktop:dev": "corepack pnpm --filter @vikram/desktop dev",
+    "dev": "node scripts/dev.mjs",
+    "format:check": "corepack pnpm -r format:check && uv run --project services/api --extra dev ruff format services/api --check",
+    "lint": "node --check scripts/dev.mjs && corepack pnpm -r lint && uv run --project services/api --extra dev ruff check services/api",
+    "typecheck": "corepack pnpm -r typecheck && uv run --project services/api --extra dev mypy --config-file services/api/pyproject.toml services/api/src",
+    "test": "corepack pnpm -r test && uv run --project services/api --extra dev pytest services/api/tests -q --basetemp .pytest-tmp",
+    "smoke": "corepack pnpm --filter @vikram/desktop smoke"
+  }
+}

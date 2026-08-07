@@ -102,6 +102,7 @@ class VikramService:
     def import_source(
         self, project_id: str, filename: str, media_type: str | None, content: bytes
     ) -> SourceResponse:
+        self.repository.get_project(project_id)
         if len(content) > self.settings.max_source_bytes:
             raise SourceTooLargeError(
                 f"Source exceeds the {self.settings.max_source_bytes // (1024 * 1024)} MB limit."
