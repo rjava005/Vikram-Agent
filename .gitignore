@@ -1,0 +1,10 @@
+*.log
+*.env
+CODEX_PROMPT.md
+PLANS.md
+agent_api_example.py
+services/
+plans/
+docs/
+apps/
+.codex/
