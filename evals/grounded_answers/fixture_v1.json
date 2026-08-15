@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "evidence": [
+    {
+      "id": "phase-margin",
+      "text": "Phase margin is the additional phase lag required at the gain-crossover frequency to bring a negative-feedback loop to the verge of instability. Larger positive phase margin generally indicates more relative stability and less ringing."
+    },
+    {
+      "id": "gain-margin",
+      "text": "Gain margin is the factor by which loop gain can increase at the phase-crossover frequency before the closed loop becomes unstable. It is commonly reported in decibels."
+    },
+    {
+      "id": "adc-aliasing",
+      "text": "Sampling frequency components above half the sample rate causes aliasing into the Nyquist band. An analog anti-alias filter attenuates those components before the ADC."
+    },
+    {
+      "id": "decoupling",
+      "text": "A local decoupling capacitor supplies transient current near an integrated circuit power pin and reduces the high-frequency impedance of the power-distribution path. Short connections minimize parasitic inductance."
+    },
+    {
+      "id": "spi-signals",
+      "text": "A conventional SPI bus uses a serial clock, controller-out peripheral-in data, peripheral-out controller-in data, and one chip-select signal per addressed peripheral."
+    },
+    {
+      "id": "junction-temperature",
+      "text": "A first-order junction-temperature estimate is ambient temperature plus dissipated power multiplied by junction-to-ambient thermal resistance: Tj equals Ta plus P times theta-JA."
+    },
+    {
+      "id": "coulomb-counting",
+      "text": "Coulomb counting estimates battery state of charge by integrating measured current over time. Sensor bias accumulates, so the estimate needs periodic correction from another observable state."
+    },
+    {
+      "id": "differential-pair",
+      "text": "A differential pair should be routed with controlled impedance, close intra-pair spacing, and a continuous reference plane. Length matching limits timing skew between the two conductors."
+    },
+    {
+      "id": "integral-windup",
+      "text": "Integral windup occurs when a controller integrator continues accumulating error while the actuator is saturated. Anti-windup limits or back-calculates the integrator state."
+    },
+    {
+      "id": "kalman-covariance",
+      "text": "In a Kalman filter, the covariance matrix represents estimated state uncertainty. The measurement update reduces uncertainty according to measurement noise and the Kalman gain."
+    },
+    {
+      "id": "return-current",
+      "text": "High-frequency return current follows the path of lowest impedance, normally close to the signal trace on its reference plane. Splits in that plane force a larger loop area and can increase emissions."
+    },
+    {
+      "id": "priority-inversion",
+      "text": "Priority inversion happens when a high-priority task waits for a resource held by a lower-priority task while medium-priority work delays the holder. Priority inheritance bounds the delay by temporarily raising the holder's priority."
+    }
+  ],
+  "cases": [
+    {"id": "answerable-phase", "question": "What does phase margin measure at gain crossover?", "answerable": true, "relevant_evidence_ids": ["phase-margin"]},
+    {"id": "answerable-gain", "question": "How is gain margin interpreted and commonly reported?", "answerable": true, "relevant_evidence_ids": ["gain-margin"]},
+    {"id": "answerable-alias", "question": "Why is an analog anti-alias filter placed before an ADC?", "answerable": true, "relevant_evidence_ids": ["adc-aliasing"]},
+    {"id": "answerable-decoupling", "question": "What does a local decoupling capacitor do near an IC power pin?", "answerable": true, "relevant_evidence_ids": ["decoupling"]},
+    {"id": "answerable-spi", "question": "Which signals make up a conventional SPI connection?", "answerable": true, "relevant_evidence_ids": ["spi-signals"]},
+    {"id": "answerable-thermal", "question": "How can junction temperature be estimated from ambient temperature?", "answerable": true, "relevant_evidence_ids": ["junction-temperature"]},
+    {"id": "answerable-coulomb", "question": "Why does a battery coulomb-counting estimate need periodic correction?", "answerable": true, "relevant_evidence_ids": ["coulomb-counting"]},
+    {"id": "answerable-diff", "question": "What routing constraints matter for a high-speed differential pair?", "answerable": true, "relevant_evidence_ids": ["differential-pair"]},
+    {"id": "answerable-windup", "question": "What causes integral windup and how can it be limited?", "answerable": true, "relevant_evidence_ids": ["integral-windup"]},
+    {"id": "answerable-kalman", "question": "What does covariance represent in a Kalman filter?", "answerable": true, "relevant_evidence_ids": ["kalman-covariance"]},
+    {"id": "answerable-return", "question": "Why can a split reference plane increase electromagnetic emissions?", "answerable": true, "relevant_evidence_ids": ["return-current"]},
+    {"id": "answerable-priority", "question": "How does priority inheritance address priority inversion?", "answerable": true, "relevant_evidence_ids": ["priority-inversion"]},
+    {"id": "negative-orbit", "question": "What burn places a spacecraft into a Hohmann transfer orbit?", "answerable": false, "relevant_evidence_ids": []},
+    {"id": "negative-protein", "question": "Which amino-acid motif controls this protein's folding pathway?", "answerable": false, "relevant_evidence_ids": []},
+    {"id": "negative-history", "question": "Who negotiated the medieval treaty discussed in these sources?", "answerable": false, "relevant_evidence_ids": []},
+    {"id": "negative-tax", "question": "Which tax deduction applies to a home-office expense this year?", "answerable": false, "relevant_evidence_ids": []}
+  ]
+}

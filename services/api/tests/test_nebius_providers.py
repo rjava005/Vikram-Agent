@@ -109,6 +109,30 @@ def test_empty_embedding_batch_does_not_call_provider() -> None:
     assert calls == 0
 
 
+def test_model_listing_uses_fixed_authenticated_endpoint() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return response(request, {"data": [{"id": "model-id"}]})
+
+    async def scenario() -> object:
+        client = NebiusHttpClient(
+            api_key=SECRET_KEY,
+            transport=httpx.MockTransport(handler),
+            retry_delay_seconds=0,
+        )
+        try:
+            return await client.get_json("/models", {"verbose": "true"})
+        finally:
+            await client.aclose()
+
+    result = run(scenario())
+    assert result == {"data": [{"id": "model-id"}]}
+    assert str(requests[0].url).startswith(f"{NEBIUS_API_BASE_URL}/models?verbose=true")
+    assert requests[0].headers["Authorization"] == f"Bearer {SECRET_KEY}"
+
+
 def test_rate_limit_is_retried_once_then_succeeds() -> None:
     calls = 0
 

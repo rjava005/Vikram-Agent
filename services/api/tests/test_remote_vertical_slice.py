@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Callable
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from vikram_api.app_factory import API_TOKEN_HEADER, create_app
@@ -172,3 +174,84 @@ def test_failed_remote_verification_does_not_persist_answer(tmp_path: Path) -> N
         with repository.connect() as connection:
             count = connection.execute("SELECT COUNT(*) FROM answers").fetchone()[0]
         assert count == 0
+
+
+def test_cancelled_remote_request_cancels_provider_and_does_not_persist(tmp_path: Path) -> None:
+    provider_started = asyncio.Event()
+    provider_cancelled = asyncio.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/embeddings"):
+            payload = json.loads(request.content)
+            inputs = payload["input"]
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"index": index, "embedding": [1.0] + ([0.0] * 31)}
+                        for index in range(len(inputs))
+                    ]
+                },
+            )
+        provider_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            provider_cancelled.set()
+            raise
+        raise AssertionError("unreachable")
+
+    async def scenario() -> None:
+        app = create_app(
+            Settings(
+                data_dir=tmp_path / "data",
+                provider_mode="nebius",
+                api_token=TOKEN,
+                nebius_api_key="test-key-never-logged",
+                nebius_embedding_dimensions=32,
+            ),
+            remote_transport=httpx.MockTransport(handler),
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                headers={API_TOKEN_HEADER: TOKEN},
+            ) as client,
+        ):
+            project = (await client.post("/api/v1/projects", json={"name": "Cancel"})).json()
+            imported = await client.post(
+                f"/api/v1/projects/{project['id']}/sources",
+                files={
+                    "file": (
+                        "control.md",
+                        b"# Stability\nPhase margin measures stability.",
+                        "text/markdown",
+                    )
+                },
+            )
+            assert imported.status_code == 201
+            enabled = await client.put(
+                f"/api/v1/projects/{project['id']}/ai-policy",
+                json={"mode": "nebius", "zdr_attested": True, "expected_revision": 0},
+            )
+            assert enabled.status_code == 200
+            request_task = asyncio.create_task(
+                client.post(
+                    f"/api/v1/projects/{project['id']}/answers",
+                    json={"question": "What does phase margin measure?"},
+                )
+            )
+            await asyncio.wait_for(provider_started.wait(), timeout=2)
+            request_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request_task
+            await asyncio.wait_for(provider_cancelled.wait(), timeout=2)
+            repository = app.state.vikram_service.repository
+            with repository.connect() as connection:
+                count = connection.execute("SELECT COUNT(*) FROM answers").fetchone()[0]
+            assert count == 0
+
+    asyncio.run(scenario())

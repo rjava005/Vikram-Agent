@@ -9,6 +9,8 @@
   "scripts": {
     "api:dev": "uv run --project services/api uvicorn vikram_api.main:app --host 127.0.0.1 --port 8742",
     "api:sync": "uv sync --project services/api --extra dev",
+    "api:eval:live": "uv run --project services/api python -m vikram_api.evals.grounded",
+    "api:eval:validate": "uv run --project services/api python -m vikram_api.evals.grounded --validate-only",
     "desktop:dev": "corepack pnpm --filter @vikram/desktop dev",
     "dev": "node scripts/dev.mjs",
     "format:check": "corepack pnpm -r format:check && uv run --project services/api --extra dev ruff format services/api --check",

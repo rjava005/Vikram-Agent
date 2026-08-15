@@ -227,6 +227,56 @@ class NebiusHttpClient:
                 "The remote AI provider exceeded the total request deadline."
             ) from None
 
+    async def get_json(
+        self, path: str, params: Mapping[str, str] | None = None
+    ) -> dict[str, object]:
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                return await self._get_json_with_retries(path, params or {})
+        except TimeoutError:
+            raise ProviderTimeoutError(
+                "The remote AI provider exceeded the total request deadline."
+            ) from None
+
+    async def _get_json_with_retries(
+        self, path: str, params: Mapping[str, str]
+    ) -> dict[str, object]:
+        if not path.startswith("/") or path.startswith("//"):
+            raise ValueError("provider paths must be absolute and relative to the fixed API base")
+        url = f"{NEBIUS_API_BASE_URL}{path}"
+        for attempt in range(2):
+            try:
+                response = await self._client.get(
+                    url,
+                    params=dict(params),
+                    headers={
+                        "Authorization": self._authorization,
+                        "Accept": "application/json",
+                    },
+                    timeout=self._timeout,
+                )
+            except httpx.TimeoutException:
+                if attempt == 0:
+                    await self._retry_pause()
+                    continue
+                raise ProviderTimeoutError("The remote AI provider timed out.") from None
+            except httpx.TransportError:
+                if attempt == 0:
+                    await self._retry_pause()
+                    continue
+                raise ProviderUnavailableError(
+                    "The remote AI provider could not be reached."
+                ) from None
+            error = _classify_status(response.status_code)
+            if error is not None:
+                retryable_status = response.status_code == 429 or response.status_code >= 500
+                if retryable_status and attempt == 0:
+                    await self._retry_pause(response.headers.get("Retry-After"))
+                    continue
+                raise error from None
+            return _decode_json_response(response)
+        raise AssertionError("provider retry loop exhausted unexpectedly")
+
     async def _post_json_with_retries(
         self, path: str, payload: Mapping[str, object]
     ) -> dict[str, object]:
@@ -264,17 +314,7 @@ class NebiusHttpClient:
                     await self._retry_pause(response.headers.get("Retry-After"))
                     continue
                 raise error from None
-            try:
-                decoded = response.json()
-            except ValueError:
-                raise ProviderInvalidResponseError(
-                    "The remote AI provider returned malformed JSON."
-                ) from None
-            if not isinstance(decoded, dict):
-                raise ProviderInvalidResponseError(
-                    "The remote AI provider returned an unexpected response shape."
-                )
-            return cast(dict[str, object], decoded)
+            return _decode_json_response(response)
         raise AssertionError("provider retry loop exhausted unexpectedly")
 
     async def aclose(self) -> None:
@@ -595,6 +635,20 @@ def _classify_status(status_code: int) -> DomainError | None:
     if 500 <= status_code < 600:
         return ProviderUnavailableError("The remote AI provider is temporarily unavailable.")
     return ProviderInvalidResponseError("The remote AI provider rejected the server request.")
+
+
+def _decode_json_response(response: httpx.Response) -> dict[str, object]:
+    try:
+        decoded = response.json()
+    except ValueError:
+        raise ProviderInvalidResponseError(
+            "The remote AI provider returned malformed JSON."
+        ) from None
+    if not isinstance(decoded, dict):
+        raise ProviderInvalidResponseError(
+            "The remote AI provider returned an unexpected response shape."
+        )
+    return cast(dict[str, object], decoded)
 
 
 def _parse_embedding_envelope(payload: Mapping[str, object]) -> _EmbeddingEnvelope:
