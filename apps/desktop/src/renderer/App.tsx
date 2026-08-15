@@ -9,7 +9,7 @@ import type {
 	Workspace,
 } from "@vikram/contracts";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import { type RecordingState, useWorkspaceStore } from "./store";
 
 export function locatorLabel(citation: Citation): string {
@@ -68,7 +68,8 @@ function ProjectRail(props: {
 				)}
 			</nav>
 			<div className="rail-footer muted">
-				<span className="privacy-dot" aria-hidden="true" /> Local workspace
+				<span className="privacy-dot" aria-hidden="true" /> Project storage
+				local
 			</div>
 		</aside>
 	);
@@ -104,15 +105,20 @@ function AnswerPanel(props: {
 }) {
 	return (
 		<section className="answer-panel" aria-labelledby="answer-title">
-			<div className="answer-kicker">
-				<span className="grounded-mark" aria-hidden="true">
-					✓
-				</span>
-				<span>
-					{props.answer.grounding === "grounded"
-						? "Grounded in your source"
-						: "Evidence is insufficient"}
-				</span>
+			<div className="answer-status-row">
+				<div className="answer-kicker">
+					<span className="grounded-mark" aria-hidden="true">
+						✓
+					</span>
+					<span>
+						{props.answer.grounding === "grounded"
+							? "Grounded in your source"
+							: "Evidence is insufficient"}
+					</span>
+				</div>
+				{props.answer.provenance.verification === "remote_verified" && (
+					<span className="verified-badge">Remote verified</span>
+				)}
 			</div>
 			<h2 id="answer-title">Vikram’s answer</h2>
 			<p className="answer-text">{props.answer.text}</p>
@@ -160,12 +166,14 @@ function AnswerPanel(props: {
 function EngineeringWorkspace(props: {
 	workspace?: Workspace;
 	loading: boolean;
+	remoteConfigured: boolean;
 	answer: Answer | null;
 	feedback: FeedbackStatus | null;
 	feedbackPending: boolean;
 	taskPending: boolean;
 	importPending: boolean;
 	onImport: () => void;
+	onConfigureAi: () => void;
 	onFeedback: (value: FeedbackStatus) => void;
 	onCreateTask: () => void;
 }) {
@@ -202,14 +210,35 @@ function EngineeringWorkspace(props: {
 					<span className="eyebrow">Active project</span>
 					<h1>{props.workspace.project.name}</h1>
 				</div>
-				<button
-					className="secondary-button"
-					type="button"
-					onClick={props.onImport}
-					disabled={props.importPending}
-				>
-					{props.importPending ? "Importing…" : "＋ Import source"}
-				</button>
+				<div className="workspace-actions">
+					<button
+						className="ai-policy-button"
+						type="button"
+						onClick={props.onConfigureAi}
+						aria-haspopup="dialog"
+					>
+						<span>
+							{props.workspace.ai_policy.mode === "nebius"
+								? "Nebius remote"
+								: "Local deterministic"}
+						</span>
+						<small>
+							{props.workspace.ai_policy.mode === "nebius"
+								? "ZDR attested"
+								: props.remoteConfigured
+									? "Remote available"
+									: "Remote unavailable"}
+						</small>
+					</button>
+					<button
+						className="secondary-button"
+						type="button"
+						onClick={props.onImport}
+						disabled={props.importPending}
+					>
+						{props.importPending ? "Importing…" : "＋ Import source"}
+					</button>
+				</div>
 			</header>
 			<section className="source-strip" aria-label="Imported project sources">
 				{props.workspace.sources.length === 0 ? (
@@ -417,7 +446,9 @@ const recordingLabels: Record<RecordingState, string> = {
 function AssistantDock(props: {
 	disabled: boolean;
 	pending: boolean;
+	isRemote: boolean;
 	onAsk: (question: string) => void;
+	onCancel: () => void;
 }) {
 	const [question, setQuestion] = useState("");
 	const recordingState = useWorkspaceStore((state) => state.recordingState);
@@ -480,29 +511,55 @@ function AssistantDock(props: {
 					<small>{recordingLabels[recordingState]}</small>
 				</span>
 			</div>
-			<form onSubmit={submit} className="assistant-form">
-				<label className="sr-only" htmlFor="assistant-question">
-					Ask about the selected project
-				</label>
-				<input
-					id="assistant-question"
-					value={question}
-					onChange={(event) => setQuestion(event.target.value)}
-					placeholder={
-						props.disabled
-							? "Create a project and import evidence first"
-							: "Ask a question about your source…"
-					}
-					disabled={props.disabled || props.pending}
-				/>
-				<button
-					className="ask-button"
-					type="submit"
-					disabled={props.disabled || props.pending || !question.trim()}
-				>
-					{props.pending ? "Thinking…" : "Ask"}
-				</button>
-			</form>
+			<div className="assistant-composer">
+				<form onSubmit={submit} className="assistant-form">
+					<label className="sr-only" htmlFor="assistant-question">
+						Ask about the selected project
+					</label>
+					<input
+						id="assistant-question"
+						value={question}
+						onChange={(event) => setQuestion(event.target.value)}
+						placeholder={
+							props.disabled
+								? "Create a project and import evidence first"
+								: "Ask a question about your source…"
+						}
+						disabled={props.disabled || props.pending}
+					/>
+					{props.pending ? (
+						<button
+							className="cancel-answer-button"
+							type="button"
+							onClick={props.onCancel}
+						>
+							Cancel
+						</button>
+					) : (
+						<button
+							className="ask-button"
+							type="submit"
+							disabled={props.disabled || !question.trim()}
+						>
+							Ask
+						</button>
+					)}
+				</form>
+				{props.pending && (
+					<div className="answer-activity" role="status" aria-live="polite">
+						<strong>
+							{props.isRemote
+								? "Remote answer in progress"
+								: "Local answer in progress"}
+						</strong>
+						<small>
+							{props.isRemote
+								? "Local retrieval → remote generation → remote verification"
+								: "Retrieving and checking local evidence"}
+						</small>
+					</div>
+				)}
+			</div>
 			<button
 				className={
 					recordingState === "recording" ? "mic-button recording" : "mic-button"
@@ -579,12 +636,211 @@ function CreateProjectDialog(props: {
 	);
 }
 
+function userFacingError(error: unknown): string {
+	if (!(error instanceof ApiError)) {
+		return error instanceof Error
+			? error.message
+			: "Something went wrong. Try the action again.";
+	}
+	const classifiedMessages: Record<string, string> = {
+		provider_not_configured:
+			"Nebius remote AI is not configured in the local API. Ask the workspace administrator to configure it, then try again.",
+		zdr_attestation_required:
+			"Confirm that Zero Data Retention is enabled before turning on remote AI.",
+		provider_authentication:
+			"Nebius authentication failed. Check the local API configuration before retrying.",
+		provider_rate_limit:
+			"Nebius is rate-limiting requests. No answer was saved; wait a moment, then try again.",
+		provider_timeout:
+			"Nebius did not respond in time. No answer was saved; try again.",
+		provider_unavailable:
+			"Nebius is temporarily unavailable. No answer was saved; try again.",
+		provider_invalid_output:
+			"Nebius returned an answer Vikram could not safely read. No answer was saved; try again.",
+		grounding_verification:
+			"Vikram could not verify the remote answer against your sources, so it was not saved. Try a more specific question.",
+		remote_index_limit:
+			"This project has too much evidence for the current remote limit. Keep remote AI off or use a smaller project.",
+		conflict:
+			"The project AI setting changed elsewhere. Close this dialog, review the current setting, and try again.",
+		request_timeout:
+			"The local answer request timed out. No answer was saved; try again.",
+	};
+	return classifiedMessages[error.code] ?? error.message;
+}
+
+function RemoteAiDialog(props: {
+	projectName: string;
+	mode: Workspace["ai_policy"]["mode"];
+	remoteConfigured: boolean;
+	pending: boolean;
+	error: string | null;
+	onClose: () => void;
+	onEnable: () => void;
+	onRevoke: () => void;
+}) {
+	const [attested, setAttested] = useState(false);
+	const [attestationError, setAttestationError] = useState<string | null>(null);
+	const firstButtonRef = useRef<HTMLButtonElement | null>(null);
+	const dialogRef = useRef<HTMLElement | null>(null);
+	const onCloseRef = useRef(props.onClose);
+	const pendingRef = useRef(props.pending);
+
+	useEffect(() => {
+		onCloseRef.current = props.onClose;
+		pendingRef.current = props.pending;
+	}, [props.onClose, props.pending]);
+
+	useEffect(() => {
+		const previousFocus =
+			document.activeElement instanceof HTMLElement
+				? document.activeElement
+				: null;
+		firstButtonRef.current?.focus();
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape" && !pendingRef.current) {
+				onCloseRef.current();
+			}
+			if (event.key !== "Tab") return;
+			const focusable = Array.from(
+				dialogRef.current?.querySelectorAll<HTMLElement>(
+					"button:not([disabled]), input:not([disabled])",
+				) ?? [],
+			);
+			const first = focusable[0];
+			const last = focusable.at(-1);
+			if (!first || !last) return;
+			if (event.shiftKey && document.activeElement === first) {
+				event.preventDefault();
+				last.focus();
+			} else if (!event.shiftKey && document.activeElement === last) {
+				event.preventDefault();
+				first.focus();
+			}
+		};
+		document.addEventListener("keydown", closeOnEscape);
+		return () => {
+			document.removeEventListener("keydown", closeOnEscape);
+			previousFocus?.focus();
+		};
+	}, []);
+
+	const enable = () => {
+		if (!attested) {
+			setAttestationError(
+				"You must attest that Zero Data Retention is enabled before continuing.",
+			);
+			return;
+		}
+		setAttestationError(null);
+		props.onEnable();
+	};
+
+	return (
+		<div className="dialog-backdrop">
+			<section
+				ref={dialogRef}
+				className="dialog-card ai-policy-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="ai-policy-title"
+				aria-describedby="ai-policy-disclosure"
+			>
+				<span className="eyebrow">Project AI boundary</span>
+				<h2 id="ai-policy-title">AI processing for {props.projectName}</h2>
+				<p id="ai-policy-disclosure">
+					Local deterministic AI keeps processing on this device. If you enable
+					Nebius remote AI, Vikram sends your question text and a bounded set of
+					source excerpts to Nebius for generation and verification.
+				</p>
+				{props.mode === "local" ? (
+					<>
+						<div className="runtime-summary" role="status">
+							<strong>Remote runtime</strong>
+							<span>
+								{props.remoteConfigured ? "Available" : "Not configured"}
+							</span>
+						</div>
+						<label className="attestation-control">
+							<input
+								type="checkbox"
+								checked={attested}
+								onChange={(event) => {
+									setAttested(event.target.checked);
+									if (event.target.checked) setAttestationError(null);
+								}}
+							/>
+							<span>
+								I attest that Zero Data Retention (ZDR) is enabled for my Nebius
+								account.
+							</span>
+						</label>
+						{attestationError && (
+							<p className="inline-error" role="alert">
+								{attestationError}
+							</p>
+						)}
+					</>
+				) : (
+					<div className="runtime-summary remote-active" role="status">
+						<strong>Nebius remote is enabled</strong>
+						<span>ZDR attested for this project</span>
+					</div>
+				)}
+				{props.error && (
+					<p className="inline-error" role="alert">
+						{props.error}
+					</p>
+				)}
+				{props.mode === "nebius" && (
+					<p className="revocation-copy">
+						Returning to local AI preserves your sources and answers. Future
+						questions stay on this device.
+					</p>
+				)}
+				<div className="dialog-actions">
+					<button
+						ref={firstButtonRef}
+						type="button"
+						className="secondary-button"
+						onClick={props.onClose}
+						disabled={props.pending}
+					>
+						Cancel
+					</button>
+					{props.mode === "local" ? (
+						<button
+							type="button"
+							className="primary-button"
+							onClick={enable}
+							disabled={props.pending}
+						>
+							{props.pending ? "Enabling…" : "Enable Nebius remote AI"}
+						</button>
+					) : (
+						<button
+							type="button"
+							className="primary-button revoke-button"
+							onClick={props.onRevoke}
+							disabled={props.pending}
+						>
+							{props.pending ? "Returning to local…" : "Use local AI"}
+						</button>
+					)}
+				</div>
+			</section>
+		</div>
+	);
+}
+
 export default function App() {
 	const queryClient = useQueryClient();
 	const [showCreate, setShowCreate] = useState(false);
+	const [showAiPolicy, setShowAiPolicy] = useState(false);
 	const [answer, setAnswer] = useState<Answer | null>(null);
 	const [feedback, setFeedback] = useState<FeedbackStatus | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+	const askControllerRef = useRef<AbortController | null>(null);
 	const selectedProjectId = useWorkspaceStore(
 		(state) => state.selectedProjectId,
 	);
@@ -614,6 +870,12 @@ export default function App() {
 		if (!selectedProjectId && projects.data?.[0])
 			setSelectedProjectId(projects.data[0].id);
 	}, [projects.data, selectedProjectId, setSelectedProjectId]);
+	useEffect(
+		() => () => {
+			askControllerRef.current?.abort();
+		},
+		[],
+	);
 
 	const refreshWorkspace = () =>
 		queryClient.invalidateQueries({
@@ -640,12 +902,49 @@ export default function App() {
 			}
 		},
 	});
+	const aiPolicyMutation = useMutation({
+		mutationFn: (input: {
+			projectId: string;
+			mode: "local" | "nebius";
+			zdrAttested: boolean;
+			expectedRevision: number;
+		}) =>
+			api.updateAiPolicy(
+				input.projectId,
+				input.mode,
+				input.zdrAttested,
+				input.expectedRevision,
+			),
+		onSuccess: (policy) => {
+			queryClient.setQueryData<Workspace>(
+				["workspace", policy.project_id],
+				(current) => (current ? { ...current, ai_policy: policy } : current),
+			);
+			setShowAiPolicy(false);
+			setNotice(
+				policy.mode === "nebius"
+					? "Nebius remote AI is enabled for this project."
+					: "This project now uses local deterministic AI.",
+			);
+		},
+	});
 	const ask = useMutation({
-		mutationFn: (question: string) =>
-			api.ask(selectedProjectId ?? "", question),
+		mutationFn: (input: {
+			projectId: string;
+			question: string;
+			signal: AbortSignal;
+		}) => api.ask(input.projectId, input.question, input.signal),
 		onSuccess: (result) => {
 			setAnswer(result);
 			setFeedback(null);
+		},
+		onError: (error) => {
+			if (error instanceof ApiError && error.code === "request_cancelled") {
+				setNotice("Answer request cancelled. No answer was saved.");
+			}
+		},
+		onSettled: () => {
+			askControllerRef.current = null;
 		},
 	});
 	const feedbackMutation = useMutation({
@@ -673,15 +972,50 @@ export default function App() {
 		onSuccess: refreshWorkspace,
 	});
 
+	const askError =
+		ask.error instanceof ApiError && ask.error.code === "request_cancelled"
+			? null
+			: ask.error;
 	const visibleError =
 		createProject.error ??
 		importSource.error ??
-		ask.error ??
+		askError ??
 		feedbackMutation.error ??
 		taskMutation.error ??
 		focusMutation.error ??
 		transitionMutation.error ??
 		workspace.error;
+	const remoteActive = workspace.data?.ai_policy.mode === "nebius";
+	const runtimeLabel = health.isError
+		? "Local API offline"
+		: health.isPending
+			? "Checking AI runtime…"
+			: remoteActive
+				? "Nebius remote · ZDR attested"
+				: "Local deterministic";
+
+	const changeAiPolicy = (mode: "local" | "nebius", zdrAttested: boolean) => {
+		const policy = workspace.data?.ai_policy;
+		if (!policy) return;
+		aiPolicyMutation.mutate({
+			projectId: policy.project_id,
+			mode,
+			zdrAttested,
+			expectedRevision: policy.revision,
+		});
+	};
+
+	const askQuestion = (question: string) => {
+		if (!selectedProjectId) return;
+		const controller = new AbortController();
+		askControllerRef.current = controller;
+		setNotice(null);
+		ask.mutate({
+			projectId: selectedProjectId,
+			question,
+			signal: controller.signal,
+		});
+	};
 
 	return (
 		<div className="app-shell">
@@ -706,8 +1040,12 @@ export default function App() {
 						className={health.isError ? "status-dot offline" : "status-dot"}
 						aria-hidden="true"
 					/>
-					{health.isError ? "Local API offline" : "Local · fake providers"}
-					<span className="privacy-label">Private on this device</span>
+					{runtimeLabel}
+					<span className="privacy-label">
+						{remoteActive
+							? "Questions use bounded remote excerpts"
+							: "Private on this device"}
+					</span>
 				</div>
 			</header>
 			<div className="workspace-grid">
@@ -715,21 +1053,28 @@ export default function App() {
 					projects={projects.data ?? []}
 					selectedId={selectedProjectId}
 					onSelect={(id) => {
+						askControllerRef.current?.abort();
 						setSelectedProjectId(id);
 						setAnswer(null);
 						setFeedback(null);
+						setShowAiPolicy(false);
 					}}
 					onCreate={() => setShowCreate(true)}
 				/>
 				<EngineeringWorkspace
 					workspace={workspace.data}
 					loading={workspace.isLoading}
+					remoteConfigured={health.data?.ai_runtime.remote_configured ?? false}
 					answer={answer}
 					feedback={feedback}
 					feedbackPending={feedbackMutation.isPending}
 					taskPending={taskMutation.isPending}
 					importPending={importSource.isPending}
 					onImport={() => importSource.mutate()}
+					onConfigureAi={() => {
+						aiPolicyMutation.reset();
+						setShowAiPolicy(true);
+					}}
 					onFeedback={(value) => feedbackMutation.mutate(value)}
 					onCreateTask={() => taskMutation.mutate()}
 				/>
@@ -744,7 +1089,9 @@ export default function App() {
 						!selectedProjectId || (workspace.data?.sources.length ?? 0) === 0
 					}
 					pending={ask.isPending}
-					onAsk={(question) => ask.mutate(question)}
+					isRemote={remoteActive}
+					onAsk={askQuestion}
+					onCancel={() => askControllerRef.current?.abort()}
 				/>
 			</div>
 			{(notice || visibleError) && (
@@ -752,11 +1099,20 @@ export default function App() {
 					className={visibleError ? "toast error" : "toast"}
 					role={visibleError ? "alert" : "status"}
 				>
-					{visibleError instanceof Error ? visibleError.message : notice}
+					{visibleError ? userFacingError(visibleError) : notice}
 					<button
 						type="button"
 						aria-label="Dismiss notification"
-						onClick={() => setNotice(null)}
+						onClick={() => {
+							setNotice(null);
+							ask.reset();
+							createProject.reset();
+							importSource.reset();
+							feedbackMutation.reset();
+							taskMutation.reset();
+							focusMutation.reset();
+							transitionMutation.reset();
+						}}
 					>
 						×
 					</button>
@@ -767,6 +1123,25 @@ export default function App() {
 					pending={createProject.isPending}
 					onClose={() => setShowCreate(false)}
 					onCreate={(name) => createProject.mutate(name)}
+				/>
+			)}
+			{showAiPolicy && workspace.data && (
+				<RemoteAiDialog
+					projectName={workspace.data.project.name}
+					mode={workspace.data.ai_policy.mode}
+					remoteConfigured={health.data?.ai_runtime.remote_configured ?? false}
+					pending={aiPolicyMutation.isPending}
+					error={
+						aiPolicyMutation.error
+							? userFacingError(aiPolicyMutation.error)
+							: null
+					}
+					onClose={() => {
+						aiPolicyMutation.reset();
+						setShowAiPolicy(false);
+					}}
+					onEnable={() => changeAiPolicy("nebius", true)}
+					onRevoke={() => changeAiPolicy("local", false)}
 				/>
 			)}
 		</div>

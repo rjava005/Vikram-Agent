@@ -22,8 +22,8 @@ This milestone does not add streaming, a general agent framework, cloud storage,
 - [x] 2026-08-15 05:03Z — Implement project-level consent/ZDR policy and safe runtime/provider configuration while retaining local-by-default projects.
 - [x] 2026-08-15 05:21Z — Implement direct-httpx Nebius embeddings, float32 caching, hybrid/RRF retrieval, structured generation, separate claim verification, request cancellation, classified failures, and transactional provenance persistence.
 - [x] 2026-08-15 05:21Z — Add and pass API provider, retry, cancellation, prompt-injection, cache, migration, no-call-before-consent, verified-grounding, and no-persistence-on-verification-failure tests (24 tests total).
-- [ ] Add the committed synthetic evaluation fixture and redacted mock/live evaluation runner.
-- [ ] Implement the desktop opt-in, ZDR attestation, remote-AI status, activity, cancellation, verified-answer, and classified-error experience.
+- [x] 2026-08-15 05:28Z — Add and validate 12 answerable plus 4 unanswerable synthetic cases and a redacted live runner that checks account model availability and enforces the milestone thresholds.
+- [x] 2026-08-15 05:28Z — Implement and test the desktop opt-in, ZDR attestation, remote-AI status, activity, cancellation, verified-answer, and classified-error experience (11 desktop tests).
 - [ ] Run fake and mocked-provider repository checks, then run the opt-in live Nebius evaluation when a locally configured key is available.
 - [ ] Request read-only owner review, resolve findings, update documentation and this plan, and move it to `plans/completed/` only after acceptance passes.
 
@@ -146,6 +146,7 @@ SQLite migrations are forward-only in normal use. Before manual rollback, copy t
 - 2026-08-14 — Nebius's live OpenAPI exposes chat completions, embeddings, rerank, responses, and model listing, but public documentation contains stale model examples. `GET /v1/models?verbose=true` is therefore an acceptance gate, not optional diagnostics.
 - 2026-08-14 — Current Nebius terms restrict competitive benchmarking. Vikram's committed fixtures and acceptance metrics remain private task-specific quality checks; publishing cross-provider comparisons requires separate legal review.
 - 2026-08-14 — Test directories created by an earlier sandboxed run (`.pytest-tmp` and `services/api/.pytest_cache`) are inaccessible to the current Windows user. The root test command now disables pytest's optional cache and uses the ignored `.vikram/pytest` temp path; no application or user data is deleted.
+- 2026-08-14 — The renderer's original eight-second request deadline was appropriate for local fakes but shorter than the bounded 45-second Nebius deadline. Answer requests now have a 60-second client deadline while every other local API request retains eight seconds.
 
 ## Outcome and follow-ups
 

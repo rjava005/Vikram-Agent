@@ -1,17 +1,17 @@
 import {
 	type AiMode,
 	type AiPolicy,
-	aiPolicySchema,
 	type Answer,
+	aiPolicySchema,
 	answerSchema,
 	type FeedbackStatus,
-	feedbackSchema,
 	type FocusSession,
+	feedbackSchema,
 	focusSchema,
 	healthSchema,
 	type Project,
-	projectSchema,
 	problemSchema,
+	projectSchema,
 	type Task,
 	taskSchema,
 	type Workspace,
@@ -35,9 +35,21 @@ async function request<T>(
 	path: string,
 	schema: z.ZodType<T>,
 	init?: RequestInit,
+	timeoutMs = 8_000,
 ): Promise<T> {
 	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), 8_000);
+	const callerSignal = init?.signal;
+	let timedOut = false;
+	const abortFromCaller = () => controller.abort();
+	if (callerSignal?.aborted) {
+		controller.abort();
+	} else {
+		callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+	}
+	const timeout = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, timeoutMs);
 	try {
 		const connection = window.vikramDesktop.v1.connection;
 		const response = await fetch(`${connection.baseUrl}${path}`, {
@@ -66,14 +78,27 @@ async function request<T>(
 		if (error instanceof ApiError) {
 			throw error;
 		}
-		if (error instanceof DOMException && error.name === "AbortError") {
-			throw new ApiError("The local service timed out.");
+		if (controller.signal.aborted) {
+			if (callerSignal?.aborted && !timedOut) {
+				throw new ApiError(
+					"The answer request was cancelled.",
+					undefined,
+					"request_cancelled",
+				);
+			}
+			throw new ApiError(
+				"The local service timed out.",
+				undefined,
+				"request_timeout",
+				true,
+			);
 		}
 		throw new ApiError(
 			"Vikram's local service is offline or returned invalid data.",
 		);
 	} finally {
 		clearTimeout(timeout);
+		callerSignal?.removeEventListener("abort", abortFromCaller);
 	}
 }
 
@@ -109,14 +134,20 @@ export const api = {
 				}),
 			},
 		),
-	ask: (projectId: string, question: string): Promise<Answer> =>
+	ask: (
+		projectId: string,
+		question: string,
+		signal?: AbortSignal,
+	): Promise<Answer> =>
 		request(
 			`/api/v1/projects/${encodeURIComponent(projectId)}/answers`,
 			answerSchema,
 			{
 				method: "POST",
 				body: JSON.stringify({ question }),
+				signal,
 			},
+			60_000,
 		),
 	feedback: (answerId: string, status: FeedbackStatus) =>
 		request(
