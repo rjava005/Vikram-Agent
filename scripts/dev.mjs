@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createDevChildEnvironments } from "./dev-environment.mjs";
 
 const port = process.env.VIKRAM_PORT ?? "8742";
 if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535) {
@@ -16,13 +17,15 @@ if (
 	throw new Error("VIKRAM_API_BASE_URL must match the configured loopback port.");
 }
 
-const environment = {
-	...process.env,
-	VIKRAM_API_TOKEN: randomBytes(32).toString("base64url"),
-	VIKRAM_API_BASE_URL: parsedBase.origin,
-	VIKRAM_HOST: "127.0.0.1",
-	VIKRAM_PORT: port,
-};
+const { apiEnvironment, desktopEnvironment } = createDevChildEnvironments(
+	process.env,
+	{
+		apiToken: randomBytes(32).toString("base64url"),
+		apiBaseUrl: parsedBase.origin,
+		host: "127.0.0.1",
+		port,
+	},
+);
 const desktopCommand =
 	process.platform === "win32"
 		? (process.env.ComSpec ?? "C:\\Windows\\System32\\cmd.exe")
@@ -45,10 +48,10 @@ const processes = [
 			"--port",
 			port,
 		],
-		{ env: environment, stdio: "inherit", windowsHide: true },
+		{ env: apiEnvironment, stdio: "inherit", windowsHide: true },
 	),
 	spawn(desktopCommand, desktopArguments, {
-		env: environment,
+		env: desktopEnvironment,
 		stdio: "inherit",
 		windowsHide: true,
 	}),

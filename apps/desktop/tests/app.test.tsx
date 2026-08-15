@@ -372,6 +372,57 @@ describe("reviewable vertical slice UI", () => {
 		);
 	});
 
+	it("aborts an active remote answer before revoking remote AI", async () => {
+		useRemoteWorkspace();
+		let requestSignal: AbortSignal | undefined;
+		mockApi.ask.mockImplementation(
+			(_project: string, _question: string, signal: AbortSignal) => {
+				requestSignal = signal;
+				return new Promise((_resolve, reject) => {
+					signal.addEventListener(
+						"abort",
+						() =>
+							reject(
+								new MockApiError("Cancelled", undefined, "request_cancelled"),
+							),
+						{ once: true },
+					);
+				});
+			},
+		);
+		mockApi.updateAiPolicy.mockImplementation(
+			(
+				_project: string,
+				_mode: string,
+				_attested: boolean,
+				_revision: number,
+			) => {
+				expect(requestSignal?.aborted).toBe(true);
+				return Promise.resolve({
+					...localPolicy,
+					revision: 2,
+				});
+			},
+		);
+		renderApp();
+		await screen.findByRole("heading", { name: "Motor controller" });
+		askQuestion();
+		await screen.findByText("Remote answer in progress");
+
+		fireEvent.click(screen.getByRole("button", { name: /Nebius remote/ }));
+		fireEvent.click(screen.getByRole("button", { name: "Use local AI" }));
+
+		await waitFor(() => expect(requestSignal?.aborted).toBe(true));
+		await waitFor(() =>
+			expect(mockApi.updateAiPolicy).toHaveBeenCalledWith(
+				projectId,
+				"local",
+				false,
+				1,
+			),
+		);
+	});
+
 	it("turns a classified provider outage into an actionable remote error", async () => {
 		useRemoteWorkspace();
 		mockApi.ask.mockRejectedValue(

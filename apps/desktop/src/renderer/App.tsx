@@ -999,6 +999,7 @@ export default function App() {
 	const changeAiPolicy = (mode: "local" | "nebius", zdrAttested: boolean) => {
 		const policy = workspace.data?.ai_policy;
 		if (!policy) return;
+		if (mode === "local") askControllerRef.current?.abort();
 		aiPolicyMutation.mutate({
 			projectId: policy.project_id,
 			mode,
