@@ -9,6 +9,10 @@ from uuid import uuid4
 
 from vikram_api.config import Settings
 from vikram_api.contracts import (
+    AiMode,
+    AiPolicyResponse,
+    AiPolicyUpdate,
+    AnswerProvenance,
     AnswerResponse,
     CitationResponse,
     ClaimResponse,
@@ -24,14 +28,17 @@ from vikram_api.contracts import (
     SourceKind,
     SourceResponse,
     TaskResponse,
+    VerificationStatus,
     WorkspaceResponse,
 )
 from vikram_api.domain.models import (
     ConflictError,
     Evidence,
+    ProviderNotConfiguredError,
     SourceTooLargeError,
     UnprocessableSourceError,
     UnsupportedSourceError,
+    ZdrAttestationRequiredError,
 )
 from vikram_api.providers.interfaces import (
     BlobStorageProvider,
@@ -87,6 +94,7 @@ class VikramService:
 
     def get_workspace(self, project_id: str) -> WorkspaceResponse:
         project = ProjectResponse.model_validate(self.repository.get_project(project_id))
+        ai_policy = AiPolicyResponse.model_validate(self.repository.get_ai_policy(project_id))
         sources = [
             SourceResponse.model_validate(row) for row in self.repository.list_sources(project_id)
         ]
@@ -94,10 +102,31 @@ class VikramService:
         focus = self.repository.get_active_focus_for_project(project_id)
         return WorkspaceResponse(
             project=project,
+            ai_policy=ai_policy,
             sources=sources,
             tasks=tasks,
             active_focus=self._focus_response(focus) if focus else None,
         )
+
+    def set_ai_policy(self, project_id: str, update: AiPolicyUpdate) -> AiPolicyResponse:
+        self.repository.get_project(project_id)
+        if update.mode is AiMode.NEBIUS:
+            if not update.zdr_attested:
+                raise ZdrAttestationRequiredError(
+                    "Attest that Zero Data Retention is enabled before sending project data to Nebius."
+                )
+            if not self.settings.remote_ai_configured:
+                raise ProviderNotConfiguredError(
+                    "Start the API in Nebius mode with a local NEBIUS_API_KEY first."
+                )
+        record = self.repository.update_ai_policy(
+            project_id=project_id,
+            mode=update.mode.value,
+            zdr_attested=update.zdr_attested if update.mode is AiMode.NEBIUS else False,
+            expected_revision=update.expected_revision,
+            updated_at=as_utc_text(self.clock.now()),
+        )
+        return AiPolicyResponse.model_validate(record)
 
     def import_source(
         self, project_id: str, filename: str, media_type: str | None, content: bytes
@@ -216,10 +245,58 @@ class VikramService:
             citations=citations,
             provider_id=self.model.provider_id,
             prompt_version=self.model.prompt_version,
+            provenance=AnswerProvenance(
+                provider_mode="fake",
+                verification=VerificationStatus.LOCAL_DETERMINISTIC,
+                model_id=self.model.provider_id,
+                embedding_model_id=self.embeddings.provider_id,
+                retrieval_strategy=self.retrieval.provider_id,
+                candidate_count=len(retrieved),
+                selected_evidence_count=len(allowed),
+            ),
             created_at=created_at_value,
         )
         self.repository.create_answer(
-            answer=response.model_dump(mode="json"), citations=citation_records
+            answer=response.model_dump(mode="json"),
+            citations=citation_records,
+            answer_run={
+                "answer_id": answer_id,
+                "provider_mode": "fake",
+                "model_id": self.model.provider_id,
+                "embedding_model_id": self.embeddings.provider_id,
+                "retrieval_strategy": self.retrieval.provider_id,
+                "verifier_model_id": None,
+                "verifier_prompt_version": None,
+                "candidate_count": len(retrieved),
+                "selected_evidence_count": len(allowed),
+                "generation_latency_ms": None,
+                "verification_latency_ms": None,
+                "input_tokens": None,
+                "output_tokens": None,
+                "created_at": as_utc_text(created_at_value),
+            },
+            retrieval_candidates=[
+                {
+                    "answer_id": answer_id,
+                    "evidence_id": candidate.evidence.id,
+                    "lexical_rank": None,
+                    "semantic_rank": None,
+                    "fused_score": candidate.score,
+                    "selected": 1,
+                }
+                for candidate in retrieved
+            ],
+            claim_verifications=[
+                {
+                    "answer_id": answer_id,
+                    "claim_id": claim.id,
+                    "evidence_ids_json": json.dumps(list(claim.evidence_ids)),
+                    "verdict": "supported",
+                    "reason": "Deterministic provider citation IDs passed structural validation.",
+                    "created_at": as_utc_text(created_at_value),
+                }
+                for claim in generated.claims
+            ],
         )
         return response
 

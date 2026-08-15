@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from vikram_api.config import Settings
-from vikram_api.contracts import HealthResponse, ProblemResponse
+from vikram_api.contracts import AiRuntimeResponse, HealthResponse, ProblemResponse
 from vikram_api.domain.models import DomainError
 from vikram_api.providers.fake import (
     DeterministicEmbeddingProvider,
@@ -65,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     title="Unauthorized",
                     status=401,
                     detail="A valid local desktop capability is required.",
+                    code="unauthorized",
                 )
                 return JSONResponse(
                     status_code=401,
@@ -82,6 +83,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             title=error.title,
             status=error.status_code,
             detail=str(error),
+            code=error.code,
+            retryable=error.retryable,
         )
         return JSONResponse(
             status_code=error.status_code,
@@ -91,6 +94,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        return HealthResponse(provider_mode=runtime.provider_mode)
+        if runtime.provider_mode == "nebius":
+            generation_model = runtime.nebius_generation_model
+            embedding_model = runtime.nebius_embedding_model
+        else:
+            generation_model = "fake-extractive-model-v1"
+            embedding_model = "fake-hash-embedding-v1"
+        return HealthResponse(
+            provider_mode=runtime.provider_mode,
+            ai_runtime=AiRuntimeResponse(
+                provider_mode=runtime.provider_mode,
+                remote_configured=runtime.remote_ai_configured,
+                generation_model=generation_model,
+                embedding_model=embedding_model,
+            ),
+        )
 
     return app

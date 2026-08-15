@@ -15,7 +15,13 @@ class SqliteRepository:
     def __init__(self, database_path: Path, migrations_dir: Path | None = None) -> None:
         self.database_path = database_path
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self.migrations_dir = migrations_dir or Path(__file__).resolve().parents[3] / "migrations"
+        source_migrations = Path(__file__).resolve().parents[3] / "migrations"
+        packaged_migrations = Path(__file__).resolve().parents[1] / "migrations"
+        self.migrations_dir = migrations_dir or (
+            packaged_migrations if packaged_migrations.is_dir() else source_migrations
+        )
+        if not self.migrations_dir.is_dir():
+            raise RuntimeError(f"SQLite migrations not found at {self.migrations_dir}")
         self.migrate()
 
     def connect(self) -> sqlite3.Connection:
@@ -74,6 +80,13 @@ class SqliteRepository:
                 "INSERT INTO projects(id, name, created_at) VALUES (?, ?, ?)",
                 (project_id, name, created_at),
             )
+            connection.execute(
+                """
+                INSERT INTO project_ai_policies(project_id, mode, zdr_attested, revision, updated_at)
+                VALUES (?, 'local', 0, 0, ?)
+                """,
+                (project_id, created_at),
+            )
         return {"id": project_id, "name": name, "created_at": created_at}
 
     def list_projects(self) -> list[dict[str, Any]]:
@@ -91,6 +104,61 @@ class SqliteRepository:
         if row is None:
             raise NotFoundError("Project not found.")
         return dict(row)
+
+    def get_ai_policy(self, project_id: str) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT project_id, mode, zdr_attested, revision, updated_at
+                FROM project_ai_policies WHERE project_id = ?
+                """,
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            self.get_project(project_id)
+            raise RuntimeError("Project AI policy is missing after migration.")
+        record = dict(row)
+        record["zdr_attested"] = bool(record["zdr_attested"])
+        return record
+
+    def update_ai_policy(
+        self,
+        *,
+        project_id: str,
+        mode: str,
+        zdr_attested: bool,
+        expected_revision: int,
+        updated_at: str,
+    ) -> dict[str, Any]:
+        new_revision = expected_revision + 1
+        with self.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE project_ai_policies
+                SET mode = ?, zdr_attested = ?, revision = ?, updated_at = ?
+                WHERE project_id = ? AND revision = ?
+                """,
+                (
+                    mode,
+                    int(zdr_attested),
+                    new_revision,
+                    updated_at,
+                    project_id,
+                    expected_revision,
+                ),
+            )
+            if cursor.rowcount != 1:
+                exists = connection.execute(
+                    "SELECT 1 FROM projects WHERE id = ?", (project_id,)
+                ).fetchone()
+                if exists is None:
+                    raise NotFoundError("Project not found.")
+                raise ConflictError("Project AI policy changed; refresh before retrying.")
+            if mode == "local":
+                connection.execute(
+                    "DELETE FROM evidence_embeddings WHERE project_id = ?", (project_id,)
+                )
+        return self.get_ai_policy(project_id)
 
     def create_source(
         self,
@@ -179,7 +247,15 @@ class SqliteRepository:
             for row in rows
         ]
 
-    def create_answer(self, *, answer: dict[str, Any], citations: list[dict[str, Any]]) -> None:
+    def create_answer(
+        self,
+        *,
+        answer: dict[str, Any],
+        citations: list[dict[str, Any]],
+        answer_run: dict[str, Any],
+        retrieval_candidates: list[dict[str, Any]],
+        claim_verifications: list[dict[str, Any]],
+    ) -> None:
         with self.transaction() as connection:
             connection.execute(
                 """
@@ -194,6 +270,42 @@ class SqliteRepository:
                 VALUES (:id, :answer_id, :evidence_id, :ordinal, :excerpt, :claim_id)
                 """,
                 citations,
+            )
+            connection.execute(
+                """
+                INSERT INTO answer_runs(
+                    answer_id, provider_mode, model_id, embedding_model_id,
+                    retrieval_strategy, verifier_model_id, verifier_prompt_version,
+                    candidate_count, selected_evidence_count, generation_latency_ms,
+                    verification_latency_ms, input_tokens, output_tokens, created_at
+                ) VALUES (
+                    :answer_id, :provider_mode, :model_id, :embedding_model_id,
+                    :retrieval_strategy, :verifier_model_id, :verifier_prompt_version,
+                    :candidate_count, :selected_evidence_count, :generation_latency_ms,
+                    :verification_latency_ms, :input_tokens, :output_tokens, :created_at
+                )
+                """,
+                answer_run,
+            )
+            connection.executemany(
+                """
+                INSERT INTO retrieval_candidates(
+                    answer_id, evidence_id, lexical_rank, semantic_rank, fused_score, selected
+                ) VALUES (
+                    :answer_id, :evidence_id, :lexical_rank, :semantic_rank, :fused_score, :selected
+                )
+                """,
+                retrieval_candidates,
+            )
+            connection.executemany(
+                """
+                INSERT INTO claim_verifications(
+                    answer_id, claim_id, evidence_ids_json, verdict, reason, created_at
+                ) VALUES (
+                    :answer_id, :claim_id, :evidence_ids_json, :verdict, :reason, :created_at
+                )
+                """,
+                claim_verifications,
             )
 
     def get_answer_record(self, answer_id: str) -> dict[str, Any]:

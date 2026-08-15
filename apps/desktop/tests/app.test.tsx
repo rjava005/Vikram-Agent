@@ -12,6 +12,7 @@ const mockApi = vi.hoisted(() => ({
 	taskFromAnswer: vi.fn(),
 	startFocus: vi.fn(),
 	transitionFocus: vi.fn(),
+	updateAiPolicy: vi.fn(),
 }));
 
 vi.mock("../src/renderer/api", () => ({ api: mockApi }));
@@ -45,6 +46,12 @@ describe("reviewable vertical slice UI", () => {
 			api_version: "v1",
 			provider_mode: "fake",
 			persistence: "sqlite",
+			ai_runtime: {
+				provider_mode: "fake",
+				remote_configured: false,
+				generation_model: "fake-extractive-model-v1",
+				embedding_model: "fake-hash-embedding-v1",
+			},
 		});
 		mockApi.listProjects.mockResolvedValue([
 			{
@@ -58,6 +65,13 @@ describe("reviewable vertical slice UI", () => {
 				id: projectId,
 				name: "Motor controller",
 				created_at: "2026-08-07T00:00:00Z",
+			},
+			ai_policy: {
+				project_id: projectId,
+				mode: "local",
+				zdr_attested: false,
+				revision: 0,
+				updated_at: "2026-08-07T00:00:00Z",
 			},
 			sources: [
 				{
@@ -106,6 +120,19 @@ describe("reviewable vertical slice UI", () => {
 			],
 			provider_id: "fake-extractive-model-v1",
 			prompt_version: "grounded-answer-v1",
+			provenance: {
+				provider_mode: "fake",
+				verification: "local_deterministic",
+				model_id: "fake-extractive-model-v1",
+				embedding_model_id: "fake-hash-embedding-v1",
+				retrieval_strategy: "fake-hybrid-retrieval-v1",
+				verifier_model_id: null,
+				verifier_prompt_version: null,
+				candidate_count: 1,
+				selected_evidence_count: 1,
+				generation_latency_ms: null,
+				verification_latency_ms: null,
+			},
 			created_at: "2026-08-07T00:00:00Z",
 		});
 		mockApi.feedback.mockResolvedValue({

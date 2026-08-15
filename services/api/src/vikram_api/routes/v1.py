@@ -5,6 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 
 from vikram_api.contracts import (
+    AiPolicyResponse,
+    AiPolicyUpdate,
     AnswerCreate,
     AnswerResponse,
     FeedbackResponse,
@@ -45,6 +47,13 @@ def create_project(payload: ProjectCreate, service: ServiceDependency) -> Projec
 @router.get("/projects/{project_id}", response_model=WorkspaceResponse)
 def get_workspace(project_id: str, service: ServiceDependency) -> WorkspaceResponse:
     return service.get_workspace(project_id)
+
+
+@router.put("/projects/{project_id}/ai-policy", response_model=AiPolicyResponse)
+def update_ai_policy(
+    project_id: str, payload: AiPolicyUpdate, service: ServiceDependency
+) -> AiPolicyResponse:
+    return service.set_ai_policy(project_id, payload)
 
 
 @router.post(

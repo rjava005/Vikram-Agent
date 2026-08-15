@@ -39,6 +39,16 @@ class GroundingStatus(StrEnum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
+class AiMode(StrEnum):
+    LOCAL = "local"
+    NEBIUS = "nebius"
+
+
+class VerificationStatus(StrEnum):
+    LOCAL_DETERMINISTIC = "local_deterministic"
+    REMOTE_VERIFIED = "remote_verified"
+
+
 class ProjectCreate(ApiModel):
     name: str = Field(min_length=1, max_length=120)
 
@@ -52,6 +62,20 @@ class ProjectResponse(ApiModel):
     id: str
     name: str
     created_at: datetime
+
+
+class AiPolicyUpdate(ApiModel):
+    mode: AiMode
+    zdr_attested: bool
+    expected_revision: int = Field(ge=0)
+
+
+class AiPolicyResponse(ApiModel):
+    project_id: str
+    mode: AiMode
+    zdr_attested: bool
+    revision: int = Field(ge=0)
+    updated_at: datetime
 
 
 class SourceResponse(ApiModel):
@@ -106,6 +130,20 @@ class AnswerCreate(ApiModel):
         return " ".join(value.split()) if isinstance(value, str) else value
 
 
+class AnswerProvenance(ApiModel):
+    provider_mode: Literal["fake", "nebius"]
+    verification: VerificationStatus
+    model_id: str
+    embedding_model_id: str
+    retrieval_strategy: str
+    verifier_model_id: str | None = None
+    verifier_prompt_version: str | None = None
+    candidate_count: int = Field(ge=0)
+    selected_evidence_count: int = Field(ge=0)
+    generation_latency_ms: int | None = Field(default=None, ge=0)
+    verification_latency_ms: int | None = Field(default=None, ge=0)
+
+
 class AnswerResponse(ApiModel):
     id: str
     project_id: str
@@ -116,6 +154,7 @@ class AnswerResponse(ApiModel):
     citations: list[CitationResponse]
     provider_id: str
     prompt_version: str
+    provenance: AnswerProvenance
     created_at: datetime
 
 
@@ -180,9 +219,17 @@ class FocusResponse(ApiModel):
 
 class WorkspaceResponse(ApiModel):
     project: ProjectResponse
+    ai_policy: AiPolicyResponse
     sources: list[SourceResponse]
     tasks: list[TaskResponse]
     active_focus: FocusResponse | None
+
+
+class AiRuntimeResponse(ApiModel):
+    provider_mode: Literal["fake", "nebius"]
+    remote_configured: bool
+    generation_model: str
+    embedding_model: str
 
 
 class HealthResponse(ApiModel):
@@ -190,6 +237,7 @@ class HealthResponse(ApiModel):
     api_version: Literal["v1"] = "v1"
     provider_mode: str
     persistence: Literal["sqlite"] = "sqlite"
+    ai_runtime: AiRuntimeResponse
 
 
 class ProblemResponse(ApiModel):
@@ -197,3 +245,5 @@ class ProblemResponse(ApiModel):
     title: str
     status: int
     detail: str
+    code: str
+    retryable: bool = False

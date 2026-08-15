@@ -47,36 +47,57 @@ class DomainError(Exception):
     status_code = 400
     title = "Domain error"
     problem_type = "https://vikram.local/problems/domain-error"
+    code = "domain_error"
+    retryable = False
 
 
 class NotFoundError(DomainError):
     status_code = 404
     title = "Not found"
     problem_type = "https://vikram.local/problems/not-found"
+    code = "not_found"
 
 
 class ConflictError(DomainError):
     status_code = 409
     title = "Conflict"
     problem_type = "https://vikram.local/problems/conflict"
+    code = "conflict"
 
 
 class UnsupportedSourceError(DomainError):
     status_code = 415
     title = "Unsupported source"
     problem_type = "https://vikram.local/problems/unsupported-source"
+    code = "unsupported_source"
 
 
 class SourceTooLargeError(DomainError):
     status_code = 413
     title = "Source too large"
     problem_type = "https://vikram.local/problems/source-too-large"
+    code = "source_too_large"
 
 
 class UnprocessableSourceError(DomainError):
     status_code = 422
     title = "Source could not be parsed"
     problem_type = "https://vikram.local/problems/unprocessable-source"
+    code = "unprocessable_source"
+
+
+class ProviderNotConfiguredError(DomainError):
+    status_code = 409
+    title = "Remote AI is not configured"
+    problem_type = "https://vikram.local/problems/provider-not-configured"
+    code = "provider_not_configured"
+
+
+class ZdrAttestationRequiredError(DomainError):
+    status_code = 422
+    title = "Zero Data Retention attestation required"
+    problem_type = "https://vikram.local/problems/zdr-attestation-required"
+    code = "zdr_attestation_required"
 
 
 def utc_now() -> datetime:

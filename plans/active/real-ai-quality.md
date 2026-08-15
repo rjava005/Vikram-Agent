@@ -16,9 +16,9 @@ This milestone does not add streaming, a general agent framework, cloud storage,
 
 ## Progress
 
-- [x] 2026-08-14 22:00Z — Re-read repository instructions, product/architecture/UI/stack documents, and inspected the current tree, manifests, accepted MVP, and Git state.
-- [x] 2026-08-14 22:00Z — Record product, privacy, retrieval, provider, and delivery decisions in this active ExecPlan.
-- [ ] Freeze the v1 contract additions and SQLite migration, then verify migration from the accepted `0001_mvp.sql` database.
+- [x] 2026-08-15 05:00Z — Re-read repository instructions, product/architecture/UI/stack documents, and inspected the current tree, manifests, accepted MVP, and Git state.
+- [x] 2026-08-15 05:00Z — Record product, privacy, retrieval, provider, and delivery decisions in this active ExecPlan.
+- [x] 2026-08-15 05:03Z — Freeze the v1 policy/runtime/provenance/problem contract additions, add the `0002_real_ai_quality.sql` migration, prove upgrade from `0001`, and verify both migrations are packaged in the wheel.
 - [ ] Implement project-level consent/ZDR policy and safe runtime/provider configuration.
 - [ ] Implement Nebius embeddings, hybrid retrieval, structured generation, claim verification, failure classification, and provenance persistence.
 - [ ] Add API unit, integration, security/privacy, migration, and synthetic evaluation coverage.
@@ -40,7 +40,7 @@ The working tree contained one pre-existing untracked user file, `examples/EGO_s
 
 ### Runtime configuration
 
-`VIKRAM_PROVIDER_MODE` accepts `fake` (default) or `nebius`. Nebius mode additionally requires `NEBIUS_API_KEY`. The API base URL is fixed in code to `https://api.tokenfactory.nebius.com/v1/`; it is not a renderer-controlled or arbitrary endpoint. Initial model defaults are `Qwen/Qwen3-30B-A3B-Instruct-2507` for generation/verification and `BAAI/bge-en-icl` for embeddings, with server-side environment overrides. Startup validates configuration but does not make a paid request. A live acceptance command validates actual account/model availability and fails visibly rather than silently selecting a different model.
+`VIKRAM_PROVIDER_MODE` accepts `fake` (default) or `nebius`. Nebius mode additionally requires `NEBIUS_API_KEY`. The API base URL is fixed in code to `https://api.tokenfactory.nebius.com/v1/`; it is not a renderer-controlled or arbitrary endpoint. Initial model candidates are `Qwen/Qwen3-30B-A3B-Instruct-2507` for generation/verification and `Qwen/Qwen3-Embedding-8B` for embeddings, with server-side environment overrides. Startup validates configuration but does not make a paid request. A live acceptance command validates actual account/model availability and fails visibly rather than silently selecting a different model.
 
 The key stays in the API process environment. It is never accepted through `/api/v1`, returned by health/status, stored in SQLite, logged, written to `.env`, exposed to Electron, or included in evaluation artifacts.
 
@@ -140,6 +140,7 @@ SQLite migrations are forward-only in normal use. Before manual rollback, copy t
 - 2026-08-14 — The renderer currently hardcodes the `Local · fake providers` status; a safe server runtime descriptor and project policy must replace that label.
 - 2026-08-14 — `requirements.txt` contains an unbounded historical OpenAI dependency while `services/api/pyproject.toml` and `uv.lock` are the actual environment. The duplicate manifest must not remain authoritative.
 - 2026-08-14 — One user-owned untracked file, `examples/EGO_sEMG.md`, exists and is excluded from milestone changes.
+- 2026-08-14 — Nebius retired the initially considered `BAAI/bge-en-icl` public endpoint on 2026-04-13. The implementation candidate changed to the currently documented `Qwen/Qwen3-Embedding-8B`; authenticated model-list validation remains required before live acceptance.
 
 ## Outcome and follow-ups
 

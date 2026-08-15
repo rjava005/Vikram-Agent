@@ -1,4 +1,7 @@
 import {
+	type AiMode,
+	type AiPolicy,
+	aiPolicySchema,
 	type Answer,
 	answerSchema,
 	type FeedbackStatus,
@@ -20,6 +23,8 @@ export class ApiError extends Error {
 	constructor(
 		message: string,
 		readonly status?: number,
+		readonly code = "unknown",
+		readonly retryable = false,
 	) {
 		super(message);
 		this.name = "ApiError";
@@ -52,6 +57,8 @@ async function request<T>(
 					? problem.data.detail
 					: "The local service rejected the request.",
 				response.status,
+				problem.success ? problem.data.code : "invalid_problem",
+				problem.success ? problem.data.retryable : false,
 			);
 		}
 		return schema.parse(payload);
@@ -83,6 +90,24 @@ export const api = {
 		request(
 			`/api/v1/projects/${encodeURIComponent(projectId)}`,
 			workspaceSchema,
+		),
+	updateAiPolicy: (
+		projectId: string,
+		mode: AiMode,
+		zdrAttested: boolean,
+		expectedRevision: number,
+	): Promise<AiPolicy> =>
+		request(
+			`/api/v1/projects/${encodeURIComponent(projectId)}/ai-policy`,
+			aiPolicySchema,
+			{
+				method: "PUT",
+				body: JSON.stringify({
+					mode,
+					zdr_attested: zdrAttested,
+					expected_revision: expectedRevision,
+				}),
+			},
 		),
 	ask: (projectId: string, question: string): Promise<Answer> =>
 		request(

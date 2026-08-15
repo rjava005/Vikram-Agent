@@ -8,6 +8,16 @@ export const projectSchema = z.object({
 	created_at: z.string().datetime(),
 });
 
+export const aiModeSchema = z.enum(["local", "nebius"]);
+
+export const aiPolicySchema = z.object({
+	project_id: z.string().uuid(),
+	mode: aiModeSchema,
+	zdr_attested: z.boolean(),
+	revision: z.number().int().nonnegative(),
+	updated_at: z.string().datetime(),
+});
+
 export const sourceSchema = z.object({
 	id: z.string().uuid(),
 	project_id: z.string().uuid(),
@@ -63,6 +73,19 @@ export const answerSchema = z.object({
 	citations: z.array(citationSchema),
 	provider_id: z.string(),
 	prompt_version: z.string(),
+	provenance: z.object({
+		provider_mode: z.enum(["fake", "nebius"]),
+		verification: z.enum(["local_deterministic", "remote_verified"]),
+		model_id: z.string(),
+		embedding_model_id: z.string(),
+		retrieval_strategy: z.string(),
+		verifier_model_id: z.string().nullable(),
+		verifier_prompt_version: z.string().nullable(),
+		candidate_count: z.number().int().nonnegative(),
+		selected_evidence_count: z.number().int().nonnegative(),
+		generation_latency_ms: z.number().int().nonnegative().nullable(),
+		verification_latency_ms: z.number().int().nonnegative().nullable(),
+	}),
 	created_at: z.string().datetime(),
 });
 
@@ -105,6 +128,7 @@ export const focusSchema = z.object({
 
 export const workspaceSchema = z.object({
 	project: projectSchema,
+	ai_policy: aiPolicySchema,
 	sources: z.array(sourceSchema),
 	tasks: z.array(taskSchema),
 	active_focus: focusSchema.nullable(),
@@ -115,6 +139,12 @@ export const healthSchema = z.object({
 	api_version: z.literal("v1"),
 	provider_mode: z.string(),
 	persistence: z.literal("sqlite"),
+	ai_runtime: z.object({
+		provider_mode: z.enum(["fake", "nebius"]),
+		remote_configured: z.boolean(),
+		generation_model: z.string(),
+		embedding_model: z.string(),
+	}),
 });
 
 export const problemSchema = z.object({
@@ -122,9 +152,13 @@ export const problemSchema = z.object({
 	title: z.string(),
 	status: z.number().int(),
 	detail: z.string(),
+	code: z.string(),
+	retryable: z.boolean(),
 });
 
 export type Project = z.infer<typeof projectSchema>;
+export type AiMode = z.infer<typeof aiModeSchema>;
+export type AiPolicy = z.infer<typeof aiPolicySchema>;
 export type Source = z.infer<typeof sourceSchema>;
 export type Citation = z.infer<typeof citationSchema>;
 export type Answer = z.infer<typeof answerSchema>;

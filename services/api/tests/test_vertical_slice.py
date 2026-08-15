@@ -11,6 +11,12 @@ def test_complete_markdown_vertical_slice(api_client: TestClient) -> None:
         "api_version": "v1",
         "provider_mode": "fake",
         "persistence": "sqlite",
+        "ai_runtime": {
+            "provider_mode": "fake",
+            "remote_configured": False,
+            "generation_model": "fake-extractive-model-v1",
+            "embedding_model": "fake-hash-embedding-v1",
+        },
     }
 
     created = api_client.post("/api/v1/projects", json={"name": "Motor controller"})
@@ -38,6 +44,19 @@ def test_complete_markdown_vertical_slice(api_client: TestClient) -> None:
     assert answered.status_code == 201, answered.text
     answer = answered.json()
     assert answer["grounding"] == "grounded"
+    assert answer["provenance"] == {
+        "provider_mode": "fake",
+        "verification": "local_deterministic",
+        "model_id": "fake-extractive-model-v1",
+        "embedding_model_id": "fake-hash-embedding-v1",
+        "retrieval_strategy": "fake-hybrid-retrieval-v1",
+        "verifier_model_id": None,
+        "verifier_prompt_version": None,
+        "candidate_count": 1,
+        "selected_evidence_count": 1,
+        "generation_latency_ms": None,
+        "verification_latency_ms": None,
+    }
     assert answer["citations"][0]["source_id"] == source["id"]
     assert answer["citations"][0]["locator"] == {
         "kind": "markdown_section",
@@ -91,6 +110,47 @@ def test_complete_markdown_vertical_slice(api_client: TestClient) -> None:
     assert workspace.status_code == 200
     assert workspace.json()["tasks"][0]["status"] == "completed"
     assert workspace.json()["active_focus"] is None
+    assert workspace.json()["ai_policy"]["mode"] == "local"
+
+
+def test_project_remote_ai_policy_fails_closed_without_configuration(
+    api_client: TestClient,
+) -> None:
+    project = api_client.post("/api/v1/projects", json={"name": "Private design"}).json()
+    workspace = api_client.get(f"/api/v1/projects/{project['id']}").json()
+    policy = workspace["ai_policy"]
+    assert policy["mode"] == "local"
+    assert policy["zdr_attested"] is False
+    assert policy["revision"] == 0
+
+    missing_attestation = api_client.put(
+        f"/api/v1/projects/{project['id']}/ai-policy",
+        json={"mode": "nebius", "zdr_attested": False, "expected_revision": 0},
+    )
+    assert missing_attestation.status_code == 422
+    assert missing_attestation.json()["code"] == "zdr_attestation_required"
+
+    unavailable = api_client.put(
+        f"/api/v1/projects/{project['id']}/ai-policy",
+        json={"mode": "nebius", "zdr_attested": True, "expected_revision": 0},
+    )
+    assert unavailable.status_code == 409
+    assert unavailable.json()["code"] == "provider_not_configured"
+
+    local = api_client.put(
+        f"/api/v1/projects/{project['id']}/ai-policy",
+        json={"mode": "local", "zdr_attested": True, "expected_revision": 0},
+    )
+    assert local.status_code == 200
+    assert local.json()["zdr_attested"] is False
+    assert local.json()["revision"] == 1
+
+    stale = api_client.put(
+        f"/api/v1/projects/{project['id']}/ai-policy",
+        json={"mode": "local", "zdr_attested": False, "expected_revision": 0},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "conflict"
 
 
 def test_rejects_unsupported_import_and_stale_focus_revision(api_client: TestClient) -> None:
