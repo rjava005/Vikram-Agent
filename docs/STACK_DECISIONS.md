@@ -11,7 +11,7 @@ These are starting decisions, not permanent commitments. Provider-specific code 
 | FastAPI + Python | Keep | Strong fit for document parsing, embeddings, evaluation, scientific tooling, and typed HTTP contracts. Accept the packaging cost of a Python sidecar and test process supervision early. |
 | Supabase | Keep for the first shared workspace, not the local review slice | Postgres, Auth, Storage, Realtime, row-level security, full-text search, and pgvector remain the intended shared system of record. The current single-user MVP uses SQLite/local blobs behind repository interfaces so setup needs no Docker or secrets. |
 | ElevenLabs | Keep behind voice interfaces | Suitable for the selected Vikram voice. Start with push-to-talk; provide deterministic fakes and leave room for a local STT option. |
-| Nebius-hosted Qwen | Keep as an opt-in evaluated provider, not a hard dependency | `Qwen/Qwen3-30B-A3B-Instruct-2507` and `Qwen/Qwen3-Embedding-8B` are configuration defaults, not assumed capabilities. Account model discovery and private task-specific evals gate live use; projects remain local until explicit ZDR attestation. |
+| Nebius-hosted Qwen | Keep as an opt-in provider candidate, not a hard dependency | `Qwen/Qwen3-30B-A3B-Instruct-2507` and `Qwen/Qwen3-Embedding-8B` are configuration defaults, not assumed capabilities. Account model discovery gates live use; projects remain local until explicit ZDR attestation. The thresholded live evaluation stays disabled until Nebius or counsel confirms in writing that it is permitted under the provider's benchmarking restriction. |
 
 ## Add now
 

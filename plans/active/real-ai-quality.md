@@ -24,8 +24,11 @@ This milestone does not add streaming, a general agent framework, cloud storage,
 - [x] 2026-08-15 05:21Z — Add and pass API provider, retry, cancellation, prompt-injection, cache, migration, no-call-before-consent, verified-grounding, and no-persistence-on-verification-failure tests (24 tests total).
 - [x] 2026-08-15 05:28Z — Add and validate 12 answerable plus 4 unanswerable synthetic cases and a redacted live runner that checks account model availability and enforces the milestone thresholds.
 - [x] 2026-08-15 05:28Z — Implement and test the desktop opt-in, ZDR attestation, remote-AI status, activity, cancellation, verified-answer, and classified-error experience (11 desktop tests).
-- [ ] Run fake and mocked-provider repository checks, then run the opt-in live Nebius evaluation when a locally configured key is available.
-- [ ] Request read-only owner review, resolve findings, update documentation and this plan, and move it to `plans/completed/` only after acceptance passes.
+- [x] 2026-08-15 05:36Z — Run repository format, lint, type, unit, integration, and native Electron fake-provider smoke checks; all deterministic and mocked-provider checks pass.
+- [x] 2026-08-15 05:43Z — Complete the requested read-only owner review and record six concrete security, revocation, evaluation, cache, evidence-boundary, and legal findings.
+- [ ] Resolve the owner-review implementation findings and rerun every deterministic acceptance check.
+- [ ] Obtain written permission for the thresholded Nebius evaluation, configure the key locally, run the live quality gate, and perform the manual remote acceptance flow.
+- [ ] Update this plan's outcome and move it to `plans/completed/` only after all acceptance criteria pass.
 
 ## Context and repository map
 
@@ -87,7 +90,7 @@ Verification: unit tests use an injected mock transport and never make network c
 
 Add redacted synthetic fixtures with at least 12 answerable and 4 unanswerable questions. Report retrieval recall@4, grounded-answer success, negative refusal behavior, citation validity, and verification acceptance separately. Store live reports only under ignored `.vikram/evals/`; committed fixtures contain no user source content.
 
-Verification: deterministic/mock evaluation is part of normal tests. The live command, when `NEBIUS_API_KEY` is set locally, must achieve recall@4 of at least 90%, grounded verified answers on at least 10 of 12 answerable cases, insufficient-evidence behavior on all 4 negatives, and 100% stored citation validity/verification for emitted claims. Safe stopping point: results identify provider/model/prompt versions and can be rerun without changing application data.
+Verification: deterministic/mock evaluation is part of normal tests. The live command must fail before a provider request unless the user separately attests to ZDR and written permission for this thresholded evaluation. Once permission and `NEBIUS_API_KEY` are both available, the gate must achieve recall@4 of at least 90%, grounded verified answers on at least 10 of 12 answerable cases, insufficient-evidence behavior on all 4 negatives, and 100% stored citation validity/verification for emitted claims. Safe stopping point: results identify provider/model/prompt versions and can be rerun without changing application data.
 
 ### Milestone 4 — Desktop remote-AI experience
 
@@ -97,7 +100,7 @@ Verification: React tests cover opt-in, missing attestation, revision conflict, 
 
 ### Milestone 5 — Acceptance, review, and delivery
 
-Document exact setup, environment, fake run, live run, evaluation, privacy, revocation, and troubleshooting commands actually executed. Run all root checks, the deterministic smoke, the live eval, and a manual two-source opt-in remote flow when the user has configured the key locally. Request the required read-only owner review and resolve correctness, security, privacy, provenance, migration, and test findings.
+Document exact setup, environment, fake run, legally permitted live run, evaluation, privacy, revocation, and troubleshooting commands actually executed. Run all root checks and the deterministic smoke. Run the live evaluation only after written permission is obtained, then perform a manual two-source opt-in remote flow when the user has configured the key locally. Request the required read-only owner review and resolve correctness, security, privacy, provenance, migration, and test findings.
 
 Verification: a new contributor can run fake mode without secrets and Nebius mode with a locally supplied key; existing source/task/focus behavior remains intact; only verified cited claims are shown and stored. Update this plan's progress, decisions, discoveries, and outcome. Move it to `plans/completed/real-ai-quality.md` only after every observable acceptance criterion passes.
 
@@ -113,7 +116,7 @@ corepack pnpm test
 corepack pnpm smoke
 ```
 
-Add and run focused API migration, policy, provider, retrieval, verification, privacy, and evaluation tests plus focused desktop tests during each milestone. The live evaluation command must require `NEBIUS_API_KEY` from the process environment and write only a redacted report under `.vikram/evals/`.
+Add and run focused API migration, policy, provider, retrieval, verification, privacy, and evaluation tests plus focused desktop tests during each milestone. The live evaluation command must require explicit ZDR and written-benchmark-permission attestations before it inspects `NEBIUS_API_KEY` or makes a provider request, and must write only a redacted report under `.vikram/evals/`.
 
 Manual acceptance uses two non-sensitive Markdown sources in a new project. In fake mode, complete the accepted MVP loop. In Nebius mode, first observe the disclosure, attest ZDR, enable remote AI, ask one answerable and one unanswerable question, inspect source-section citations and verification state, cancel an in-flight request once, convert the verified answer to a task, and complete a focus transition. Revoke remote AI and confirm the project returns to local mode. Inspect Git status and logs to verify no key, source content, `.vikram` data, or user-owned `examples/EGO_sEMG.md` was staged.
 
@@ -134,6 +137,7 @@ SQLite migrations are forward-only in normal use. Before manual rollback, copy t
 - 2026-08-14, main agent — Delay streaming until verification can gate all visible text. This prevents transient unsupported claims from appearing in the UI.
 - 2026-08-14, main agent — Promote the already locked BSD-3-Clause `httpx>=0.28,<1` client to the service's production dependencies and remove the obsolete root `requirements.txt`, leaving one authoritative Python manifest. Direct HTTP is the smallest compatible set, permits an explicit wall-clock retry budget, and avoids adding the OpenAI SDK's new `httpx2` dependency solely for an OpenAI-compatible API.
 - 2026-08-14, main agent — Keep the 30B Instruct model as the default lower-cost candidate and make the 235B Instruct model an explicit quality override until live account availability, latency, and cost are measured. This is reversible through server environment configuration.
+- 2026-08-14, main agent — Place the thresholded live evaluation on legal hold. Current Nebius Terms section 5(f) restricts benchmarking without stating a private or task-specific exception, so the runner must require an explicit written-permission attestation and acceptance cannot close until that permission exists. This is a compliance gate, not a legal conclusion.
 
 ## Discoveries
 
@@ -144,12 +148,12 @@ SQLite migrations are forward-only in normal use. Before manual rollback, copy t
 - 2026-08-14 — One user-owned untracked file, `examples/EGO_sEMG.md`, exists and is excluded from milestone changes.
 - 2026-08-14 — Nebius retired the initially considered `BAAI/bge-en-icl` public endpoint on 2026-04-13. The implementation candidate changed to the currently documented `Qwen/Qwen3-Embedding-8B`; authenticated model-list validation remains required before live acceptance.
 - 2026-08-14 — Nebius's live OpenAPI exposes chat completions, embeddings, rerank, responses, and model listing, but public documentation contains stale model examples. `GET /v1/models?verbose=true` is therefore an acceptance gate, not optional diagnostics.
-- 2026-08-14 — Current Nebius terms restrict competitive benchmarking. Vikram's committed fixtures and acceptance metrics remain private task-specific quality checks; publishing cross-provider comparisons requires separate legal review.
+- 2026-08-14 — Current Nebius Terms section 5(f) restricts engaging in competitive analysis or benchmarking and does not expressly limit that restriction to public or cross-provider work. The prior assumption that a private task-specific gate was necessarily permitted was unsupported; no live thresholded evaluation was run, and written confirmation is now required.
 - 2026-08-14 — Test directories created by an earlier sandboxed run (`.pytest-tmp` and `services/api/.pytest_cache`) are inaccessible to the current Windows user. The root test command now disables pytest's optional cache and uses the ignored `.vikram/pytest` temp path; no application or user data is deleted.
 - 2026-08-14 — The renderer's original eight-second request deadline was appropriate for local fakes but shorter than the bounded 45-second Nebius deadline. Answer requests now have a 60-second client deadline while every other local API request retains eight seconds.
 
 ## Outcome and follow-ups
 
-Implementation is in progress. Completion requires the fake and mocked-provider checks, live Nebius evaluation with a locally configured key, manual remote acceptance, read-only review, documentation, and plan closure.
+Implementation is in progress. The fake and mocked-provider checks pass and the read-only owner review is complete. Completion still requires resolving the review findings, rerunning deterministic acceptance, obtaining written permission for the thresholded live Nebius evaluation, configuring a key locally, running the legal-gated evaluation and manual remote acceptance, and closing this plan.
 
 Separate follow-up ExecPlans should cover durable background indexing beyond the temporary cap, Postgres/pgvector shared workspaces with authentication/RLS, OCR and layout-aware PDF provenance, generated API clients, streaming with verification-safe presentation, packaged sidecar supervision, and the dedicated local STT/TTS evaluation and migration (optional CUDA, CPU fallback, no always-on capture).

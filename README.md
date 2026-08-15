@@ -106,13 +106,13 @@ Validate the committed private evaluation fixture without a key:
 corepack pnpm api:eval:validate
 ```
 
-After configuring `NEBIUS_API_KEY` in the current process and confirming organization-level ZDR, run the live quality gate:
+The thresholded live evaluation is on legal hold. Section 5(f) of the current [Nebius Terms of Service](https://docs.tokenfactory.nebius.com/legal/terms-of-service) restricts benchmarking, and the text does not provide a clear private or product-specific exception. Do not run the command below unless Nebius or qualified counsel has confirmed in writing that this use is permitted. After that confirmation, configure `NEBIUS_API_KEY`, confirm organization-level ZDR, and record both attestations explicitly:
 
 ```powershell
-corepack pnpm api:eval:live --attest-zdr
+corepack pnpm api:eval:live --attest-zdr --attest-benchmark-permission
 ```
 
-The runner first checks the account's live model catalog, then evaluates 12 answerable and 4 unanswerable synthetic questions. It writes a redacted report under `.vikram/evals/` and exits nonzero unless recall@4 is at least 90%, at least 10 answerable questions produce verified grounded answers, all negative questions remain unsupported, and every emitted claim has a valid verifier-approved reference. These are private task-specific checks, not a cross-provider benchmark for publication.
+The runner fails before any provider request unless both attestations are present. When legally permitted, it first checks the account's live model catalog, then evaluates 12 answerable and 4 unanswerable synthetic questions. It writes a redacted report under `.vikram/evals/` and exits nonzero unless recall@4 is at least 90%, at least 10 answerable questions produce verified grounded answers, all negative questions remain unsupported, and every emitted claim has a valid verifier-approved reference.
 
 ## Runtime configuration
 
