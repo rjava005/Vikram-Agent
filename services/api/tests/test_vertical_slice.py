@@ -126,6 +126,18 @@ def test_rejects_unsupported_import_and_stale_focus_revision(api_client: TestCli
 
 
 def test_requires_capability_and_rejects_whitespace(api_client: TestClient) -> None:
+    preflight = api_client.options(
+        "/api/v1/projects",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-Vikram-Token",
+            "X-Vikram-Token": "",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
+
     unauthorized = api_client.get(
         "/api/v1/projects",
         headers={"Origin": "null", "X-Vikram-Token": ""},

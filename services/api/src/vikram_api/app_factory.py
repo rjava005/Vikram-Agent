@@ -57,7 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def require_local_capability(request: Request, call_next: object) -> object:
-        if request.url.path.startswith("/api/v1"):
+        if request.method != "OPTIONS" and request.url.path.startswith("/api/v1"):
             supplied = request.headers.get(API_TOKEN_HEADER, "")
             if not secrets.compare_digest(supplied, runtime.api_token):
                 problem = ProblemResponse(

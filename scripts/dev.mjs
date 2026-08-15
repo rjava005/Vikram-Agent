@@ -23,7 +23,14 @@ const environment = {
 	VIKRAM_HOST: "127.0.0.1",
 	VIKRAM_PORT: port,
 };
-const corepack = process.platform === "win32" ? "corepack.cmd" : "corepack";
+const desktopCommand =
+	process.platform === "win32"
+		? (process.env.ComSpec ?? "C:\\Windows\\System32\\cmd.exe")
+		: "corepack";
+const desktopArguments =
+	process.platform === "win32"
+		? ["/d", "/s", "/c", "corepack pnpm --filter @vikram/desktop dev"]
+		: ["pnpm", "--filter", "@vikram/desktop", "dev"];
 const processes = [
 	spawn(
 		"uv",
@@ -40,9 +47,8 @@ const processes = [
 		],
 		{ env: environment, stdio: "inherit", windowsHide: true },
 	),
-	spawn(corepack, ["pnpm", "--filter", "@vikram/desktop", "dev"], {
+	spawn(desktopCommand, desktopArguments, {
 		env: environment,
-		shell: process.platform === "win32",
 		stdio: "inherit",
 		windowsHide: true,
 	}),
