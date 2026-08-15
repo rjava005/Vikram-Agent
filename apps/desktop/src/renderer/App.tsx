@@ -750,8 +750,10 @@ function RemoteAiDialog(props: {
 				<h2 id="ai-policy-title">AI processing for {props.projectName}</h2>
 				<p id="ai-policy-disclosure">
 					Local deterministic AI keeps processing on this device. If you enable
-					Nebius remote AI, Vikram sends your question text and a bounded set of
-					source excerpts to Nebius for generation and verification.
+					Nebius remote AI, Vikram sends bounded source evidence units to Nebius
+					for semantic embedding. For each question, it sends the question text
+					and at most four selected source excerpts for generation and
+					verification.
 				</p>
 				{props.mode === "local" ? (
 					<>
@@ -1043,7 +1045,7 @@ export default function App() {
 					{runtimeLabel}
 					<span className="privacy-label">
 						{remoteActive
-							? "Questions use bounded remote excerpts"
+							? "Remote embeddings + bounded answer excerpts"
 							: "Private on this device"}
 					</span>
 				</div>

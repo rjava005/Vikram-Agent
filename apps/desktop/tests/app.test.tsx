@@ -264,7 +264,10 @@ describe("reviewable vertical slice UI", () => {
 		);
 
 		expect(
-			screen.getByText(/question text and a bounded set of source excerpts/i),
+			screen.getByText(/bounded source evidence units.*semantic embedding/i),
+		).toBeTruthy();
+		expect(
+			screen.getByText(/at most four selected source excerpts/i),
 		).toBeTruthy();
 		fireEvent.click(
 			screen.getByRole("button", { name: "Enable Nebius remote AI" }),

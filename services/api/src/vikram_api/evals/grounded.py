@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -292,7 +293,11 @@ def main() -> None:
     settings = Settings(
         provider_mode="nebius", api_token="evaluation-only-capability-token-000000000000"
     )
-    report = asyncio.run(run_live(fixture, settings, zdr_attested=args.attest_zdr))
+    try:
+        report = asyncio.run(run_live(fixture, settings, zdr_attested=args.attest_zdr))
+    except (DomainError, RuntimeError) as error:
+        print(f"Evaluation stopped: {error}", file=sys.stderr)
+        raise SystemExit(2) from None
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output = args.output_dir / f"grounded-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
     output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")

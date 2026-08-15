@@ -4,16 +4,17 @@ Vikram is a desktop AI workspace designed to help engineers learn, plan, and bui
 
 ## Reviewable MVP
 
-The current vertical slice is local-only and needs no model, voice, database, or cloud credentials. It provides:
+The default vertical slice is local-only and needs no model, voice, database, or cloud credentials. An optional Nebius mode can be enabled for individual projects after an explicit privacy disclosure and Zero Data Retention (ZDR) attestation. It provides:
 
 - a sandboxed Electron + React + TypeScript + Tailwind desktop;
 - a FastAPI service with a versioned `/api/v1` contract;
 - SQLite migrations and content-addressed local source blobs;
 - deterministic fake model, embedding, retrieval, speech-to-text, and text-to-speech providers;
+- opt-in Nebius embeddings and two-pass generated-answer verification behind the same API boundary;
 - explicit PDF/Markdown selection through the Electron main process;
 - page- or section-grounded answers, editable learning feedback, tasks, and focus sessions.
 
-This is a single-user review build. The API binds only to loopback and every `/api/v1` request requires a 256-bit capability generated in memory by the dev launcher. CORS is not treated as authentication, and the token is never logged or stored. Do not expose the API port to a network or use this milestone for shared/private multi-user data. Supabase authentication, RLS, packaged sidecar supervision, and signed distribution belong to a later security plan.
+This is a single-user review build. The API binds only to loopback and every `/api/v1` request requires a 256-bit capability generated in memory by the dev launcher. CORS is not treated as authentication, and the token is never logged or stored. The renderer never receives a model credential or provider URL. Do not expose the API port to a network or use this milestone for shared/private multi-user data. Supabase authentication, RLS, packaged sidecar supervision, and signed distribution belong to a later security plan.
 
 ## Prerequisites
 
@@ -54,6 +55,22 @@ corepack pnpm dev
 
 This generates a fresh local API capability, starts FastAPI at `http://127.0.0.1:8742`, and launches Electron through `electron-vite`. Runtime data is created under `.vikram/` and remains local and ignored by Git. Stop both processes with `Ctrl+C`.
 
+### Optional Nebius remote AI
+
+First enable organization-level ZDR in the Nebius account as described in the [Nebius legal guide](https://docs.tokenfactory.nebius.com/legal/legal-quick-guide). Vikram cannot inspect that account setting, so each project requires a user attestation before it sends data. On the first remote question, Vikram sends the project's bounded evidence units (up to the 256-unit milestone cap) to Nebius for semantic embedding and caches those vectors locally. Each answer then sends the question and at most four selected source excerpts for generation and verification. Project records, original source files, tasks, feedback, and focus data remain local.
+
+With the virtual environment activated, configure the key only in the current PowerShell process and launch the same app:
+
+```powershell
+$env:VIKRAM_PROVIDER_MODE = 'nebius'
+$secureNebiusKey = Read-Host -AsSecureString 'Nebius API key'
+$env:NEBIUS_API_KEY = [System.Net.NetworkCredential]::new('', $secureNebiusKey).Password
+Remove-Variable secureNebiusKey
+corepack pnpm dev
+```
+
+The app still opens every project in local deterministic mode. Open the project's AI processing control, read the disclosure, attest that ZDR is enabled, and choose **Enable Nebius remote AI**. Revoking remote AI deletes that project's cached Nebius embeddings and preserves its sources, previous answers, tasks, and focus history. A failed remote request is never silently replaced with a fake answer.
+
 ## Exercise the complete slice
 
 1. Select **New project** and name the project.
@@ -64,6 +81,8 @@ This generates a fresh local API capability, starts FastAPI at `http://127.0.0.1
 6. Select **Turn answer into a task**.
 7. In Today, select **Focus**, then **Pause**, **Resume**, and **Complete**.
 8. Optionally select the circular push-to-talk control. Recording permission is requested only after that action, every recording state is visible, and Stop immediately releases the microphone. This milestone does not send recorded audio to a real provider.
+
+For remote acceptance, import two non-sensitive sources, enable Nebius for only that project, ask one supported and one unsupported question, inspect the **Remote verified** badge and citations, cancel one in-flight answer, then return the project to local AI. Unsupported or unverified remote claims produce a visible error and are not saved.
 
 Scanned PDFs without extractable text fail with a visible OCR-not-available message. The app never modifies the selected source file.
 
@@ -81,6 +100,20 @@ corepack pnpm smoke
 
 `smoke` builds and launches the native Electron application, starts the real local FastAPI service with fake providers, runs the grounded workflow through task/focus completion, checks the structured citation, verifies that Node globals are absent from the renderer, and closes its processes automatically.
 
+Validate the committed private evaluation fixture without a key:
+
+```powershell
+corepack pnpm api:eval:validate
+```
+
+After configuring `NEBIUS_API_KEY` in the current process and confirming organization-level ZDR, run the live quality gate:
+
+```powershell
+corepack pnpm api:eval:live --attest-zdr
+```
+
+The runner first checks the account's live model catalog, then evaluates 12 answerable and 4 unanswerable synthetic questions. It writes a redacted report under `.vikram/evals/` and exits nonzero unless recall@4 is at least 90%, at least 10 answerable questions produce verified grounded answers, all negative questions remain unsupported, and every emitted claim has a valid verifier-approved reference. These are private task-specific checks, not a cross-provider benchmark for publication.
+
 ## Runtime configuration
 
 | Variable | Default | Meaning |
@@ -88,12 +121,18 @@ corepack pnpm smoke
 | `VIKRAM_DATA_DIR` | `.vikram` | Local SQLite database and content-addressed blobs. |
 | `VIKRAM_HOST` | `127.0.0.1` | API bind host; the canonical launcher forces loopback. |
 | `VIKRAM_PORT` | `8742` | Shared API/desktop port; the launcher validates it. |
-| `VIKRAM_PROVIDER_MODE` | `fake` | Only `fake` is accepted in this milestone; other values fail closed. |
+| `VIKRAM_PROVIDER_MODE` | `fake` | `fake` keeps every project deterministic and local; `nebius` makes the opt-in remote capability available. |
+| `NEBIUS_API_KEY` | unset | Required only when provider mode is `nebius`; keep it in the process environment and never commit it. |
+| `VIKRAM_NEBIUS_GENERATION_MODEL` | `Qwen/Qwen3-30B-A3B-Instruct-2507` | Server-selected generation and verification model; live evaluation must confirm account availability. |
+| `VIKRAM_NEBIUS_EMBEDDING_MODEL` | `Qwen/Qwen3-Embedding-8B` | Server-selected semantic embedding model. |
+| `VIKRAM_NEBIUS_EMBEDDING_DIMENSIONS` | `4096` | Requested embedding dimensions; changing it invalidates the matching cache and re-embeds evidence. |
+| `VIKRAM_NEBIUS_TIMEOUT_SECONDS` | `45` | Total deadline for one provider operation; the desktop allows 60 seconds for the complete answer request. |
+| `VIKRAM_NEBIUS_MAX_EVIDENCE_UNITS` | `256` | Temporary per-project remote-indexing limit. |
 | `VIKRAM_API_BASE_URL` | `http://127.0.0.1:<VIKRAM_PORT>` | Shared renderer/main API target; only matching loopback HTTP is accepted. |
 | `VIKRAM_API_TOKEN` | generated by `pnpm dev` | High-entropy per-launch local capability; required only when starting processes manually. |
 | `VIKRAM_MAX_SOURCE_BYTES` | `10485760` | Maximum selected source size. |
 
-No `.env` file is required or bundled.
+No `.env` file is required or bundled. Keys, source excerpts, provider request/response bodies, and live evaluation data are not staged by the documented workflow.
 
 The long-term vision is an assistant that understands a user's projects and working patterns over time without hiding its reasoning or acting beyond the user's approval. Vikram should be equally useful while reading a research paper, exploring a large codebase, reviewing a PCB or CAD design, planning a product, organizing components, or preparing for the next focused work session.
 
@@ -132,7 +171,7 @@ Vikram uses a desktop-first experience with a separately testable AI and data se
 | Application API | FastAPI, Python | Ingestion, retrieval, agent workflows, and typed application contracts |
 | Data platform | SQLite + local content-addressed blobs for this MVP; Supabase/Postgres later | Local projects, immutable source evidence, answers, tasks, and focus events |
 | Retrieval | Deterministic lexical/hash baseline behind retrieval and embedding ports | Reviewable local evidence retrieval with structured provenance and citations |
-| AI models | Provider-neutral gateway; Nebius-hosted Qwen is an initial candidate | Reasoning, explanation, structured outputs, and tool selection |
+| AI models | Deterministic local default; optional Nebius-hosted Qwen behind project consent | Structured grounded generation and independent claim verification |
 | Voice | Provider-neutral speech interfaces; ElevenLabs is an initial candidate | Push-to-talk transcription and the Vikram voice experience |
 | Observability | OpenTelemetry-compatible tracing | Debuggable cross-process workflows with private-content redaction |
 

@@ -29,7 +29,7 @@ Vikram now uses a pnpm/uv monorepo so desktop, API, contracts, migrations, and e
 | `docs/` | Product, architecture, UI, decision, and operating documentation. |
 | `plans/active/`, `plans/completed/` | Living and historical ExecPlans. |
 
-For the current slice, `packages/contracts` contains checked-in Zod runtime schemas and inferred TypeScript types that mirror the Pydantic `/api/v1` models. Automated OpenAPI-to-TypeScript generation is a follow-up; the runtime validators are not generated output. `services/api/migrations/0001_mvp.sql` is the active local SQLite migration. `supabase/migrations` is intentionally absent until the shared-workspace/auth/RLS milestone.
+For the current slice, `packages/contracts` contains checked-in Zod runtime schemas and inferred TypeScript types that mirror the Pydantic `/api/v1` models. Automated OpenAPI-to-TypeScript generation is a follow-up; the runtime validators are not generated output. `services/api/migrations/0001_mvp.sql` creates the accepted local slice and `0002_real_ai_quality.sql` adds project AI policies, remote embedding cache, retrieval candidates, and verification provenance. `evals/grounded_answers/fixture_v1.json` is synthetic and safe to commit; live reports stay under ignored `.vikram/evals/`. `supabase/migrations` is intentionally absent until the shared-workspace/auth/RLS milestone.
 
 ## Boundary rules
 

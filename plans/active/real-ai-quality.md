@@ -53,7 +53,7 @@ Each project has a policy with `mode: local | nebius`, `zdr_attested: boolean`, 
 
 The request contains `mode`, `zdr_attested`, and `expected_revision`. Selecting `nebius` requires `zdr_attested=true` and a server runtime configured for Nebius. Selecting `local` clears the attestation and deletes cached remote embeddings for that project. Revision conflicts return a typed conflict response. The workspace response includes the current policy so reloads preserve the user-visible choice.
 
-The consent dialog states that question text and bounded source excerpts will be transmitted to Nebius. Because Vikram cannot inspect the provider account setting, the user must attest that ZDR is enabled. This is an explicit product/privacy assumption selected by the user. If Nebius changes its privacy terms or ZDR cannot be relied upon, remote AI must remain disabled until this contract is revisited.
+The consent dialog states that bounded evidence units will be transmitted to Nebius for semantic embedding and that each answer transmits the question plus at most four selected source excerpts for generation and verification. Because Vikram cannot inspect the provider account setting, the user must attest that ZDR is enabled. This is an explicit product/privacy assumption selected by the user. If Nebius changes its privacy terms or ZDR cannot be relied upon, remote AI must remain disabled until this contract is revisited.
 
 ### Answering and provenance
 

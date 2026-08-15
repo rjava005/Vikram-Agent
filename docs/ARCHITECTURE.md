@@ -64,7 +64,7 @@ flowchart TD
 
 Long context is a fallback resource, not a replacement for ingestion quality or retrieval evaluation.
 
-The implemented fake-provider baseline deliberately uses deterministic token overlap plus hash embeddings over the small local evidence set. It preserves the same parsing, evidence, retrieval, generation, and citation-verification boundaries that a real hybrid provider will use, but it is not presented as production-quality semantic retrieval. PostgreSQL full-text search, pgvector, fusion, and evaluation remain follow-up work.
+The deterministic fake-provider baseline remains the default and uses token overlap plus hash embeddings over the small local evidence set. An optional project-scoped Nebius path caches float32 Qwen embeddings in SQLite, builds separate lexical and semantic ranks, fuses them with reciprocal-rank fusion, generates structured claims over at most four bounded evidence excerpts, and sends those claims through a separate verification request. The UI receives only verifier-approved claims; a fully unsupported result is not persisted. Provider calls are async, cancelable, bounded by total deadlines, classified on failure, and never receive data until the project policy records explicit ZDR attestation. PostgreSQL full-text search, pgvector, reranking, and durable background indexing remain follow-up work.
 
 ## Memory model
 
