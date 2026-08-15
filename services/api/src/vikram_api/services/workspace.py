@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from datetime import datetime
@@ -84,6 +85,8 @@ class VikramService:
         self.text_to_speech = text_to_speech
         self.clock = clock
         self.remote_grounding = remote_grounding
+        self._active_remote_runs: dict[str, set[asyncio.Task[object]]] = {}
+        self._policy_cancelled_runs: set[asyncio.Task[object]] = set()
 
     def create_project(self, name: str) -> ProjectResponse:
         normalized = " ".join(name.split())
@@ -111,7 +114,7 @@ class VikramService:
             active_focus=self._focus_response(focus) if focus else None,
         )
 
-    def set_ai_policy(self, project_id: str, update: AiPolicyUpdate) -> AiPolicyResponse:
+    async def set_ai_policy(self, project_id: str, update: AiPolicyUpdate) -> AiPolicyResponse:
         self.repository.get_project(project_id)
         if update.mode is AiMode.NEBIUS:
             if not update.zdr_attested:
@@ -129,6 +132,8 @@ class VikramService:
             expected_revision=update.expected_revision,
             updated_at=as_utc_text(self.clock.now()),
         )
+        if update.mode is AiMode.LOCAL:
+            await self._cancel_remote_runs(project_id)
         return AiPolicyResponse.model_validate(record)
 
     def import_source(
@@ -194,7 +199,7 @@ class VikramService:
                 raise ProviderNotConfiguredError(
                     "Remote AI is enabled for this project but is not configured in the API."
                 )
-            return await self._answer_remote(project_id, question)
+            return await self._answer_remote(project_id, question, policy.revision)
         return self._answer_local(project_id, question)
 
     def _answer_local(self, project_id: str, question: str) -> AnswerResponse:
@@ -313,18 +318,38 @@ class VikramService:
         )
         return response
 
-    async def _answer_remote(self, project_id: str, question: str) -> AnswerResponse:
+    async def _answer_remote(
+        self, project_id: str, question: str, policy_revision: int
+    ) -> AnswerResponse:
         if self.remote_grounding is None:
             raise ProviderNotConfiguredError("Remote AI is not configured in the API.")
-        self.repository.get_project(project_id)
-        evidence = self.repository.list_evidence(project_id)
-        created_at_value = self.clock.now()
-        run = await self.remote_grounding.answer(
-            project_id,
-            question,
-            evidence,
-            as_utc_text(created_at_value),
-        )
+        current_task = asyncio.current_task()
+        if current_task is None:
+            raise RuntimeError("Remote answers require an active asyncio task.")
+        active = self._active_remote_runs.setdefault(project_id, set())
+        active.add(current_task)
+        try:
+            self.repository.get_project(project_id)
+            evidence = self.repository.list_evidence(project_id)
+            created_at_value = self.clock.now()
+            run = await self.remote_grounding.answer(
+                project_id,
+                question,
+                evidence,
+                as_utc_text(created_at_value),
+                policy_revision,
+            )
+        except asyncio.CancelledError:
+            if current_task in self._policy_cancelled_runs:
+                raise ConflictError(
+                    "Remote AI was revoked while the answer was running; no result was saved."
+                ) from None
+            raise
+        finally:
+            self._policy_cancelled_runs.discard(current_task)
+            active.discard(current_task)
+            if not active:
+                self._active_remote_runs.pop(project_id, None)
         allowed = {candidate.evidence.id: candidate.evidence for candidate in run.retrieved}
         for claim in run.answer.claims:
             if not claim.evidence_ids or any(item not in allowed for item in claim.evidence_ids):
@@ -433,8 +458,19 @@ class VikramService:
                 }
                 for outcome in run.verification_outcomes
             ],
+            expected_ai_policy_revision=policy_revision,
         )
         return response
+
+    async def _cancel_remote_runs(self, project_id: str) -> None:
+        tasks = tuple(self._active_remote_runs.get(project_id, ()))
+        current_task = asyncio.current_task()
+        cancellable = tuple(task for task in tasks if task is not current_task and not task.done())
+        self._policy_cancelled_runs.update(cancellable)
+        for task in cancellable:
+            task.cancel()
+        if cancellable:
+            await asyncio.gather(*cancellable, return_exceptions=True)
 
     def set_feedback(self, answer_id: str, status: FeedbackStatus) -> FeedbackResponse:
         record = self.repository.upsert_feedback(

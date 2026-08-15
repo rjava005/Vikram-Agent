@@ -76,7 +76,12 @@ class RemoteGroundedPipeline:
         self.model = model
 
     async def answer(
-        self, project_id: str, question: str, evidence: list[Evidence], created_at: str
+        self,
+        project_id: str,
+        question: str,
+        evidence: list[Evidence],
+        created_at: str,
+        policy_revision: int,
     ) -> RemoteGroundedRun:
         if not evidence:
             raise GroundingVerificationError(
@@ -86,6 +91,17 @@ class RemoteGroundedPipeline:
             raise RemoteIndexLimitError(
                 "This project exceeds the temporary remote indexing limit. Narrow the sources or use local mode."
             )
+        if any(len(item.content) > self.embeddings.max_input_characters for item in evidence):
+            raise RemoteIndexLimitError(
+                "An evidence unit exceeds the remote embedding character limit. Re-import it as smaller sections or use local mode."
+            )
+        query_text = f"{QUERY_INSTRUCTION}{question}"
+        if len(query_text) > self.embeddings.max_input_characters:
+            raise RemoteIndexLimitError(
+                "The question exceeds the remote embedding character limit. Shorten it or use local mode."
+            )
+
+        self.repository.assert_nebius_policy(project_id, policy_revision)
 
         content_hashes = {
             item.id: hashlib.sha256(item.content.encode("utf-8")).hexdigest() for item in evidence
@@ -94,10 +110,12 @@ class RemoteGroundedPipeline:
             project_id=project_id,
             provider_id=self.embeddings.provider_id,
             model_id=self.embeddings.model_id,
+            expected_dimensions=self.embeddings.dimensions,
             content_hashes=content_hashes,
         )
         missing = [item for item in evidence if item.id not in vectors]
         if missing:
+            self.repository.assert_nebius_policy(project_id, policy_revision)
             embedded = await self.embeddings.embed_batch([item.content for item in missing])
             if len(embedded.vectors) != len(missing):
                 raise ProviderInvalidResponseError(
@@ -111,10 +129,12 @@ class RemoteGroundedPipeline:
                 provider_id=self.embeddings.provider_id,
                 model_id=self.embeddings.model_id,
                 records=[(item.id, content_hashes[item.id], vectors[item.id]) for item in missing],
+                expected_policy_revision=policy_revision,
                 created_at=created_at,
             )
 
-        query_result = await self.embeddings.embed_batch([f"{QUERY_INSTRUCTION}{question}"])
+        self.repository.assert_nebius_policy(project_id, policy_revision)
+        query_result = await self.embeddings.embed_batch([query_text])
         if len(query_result.vectors) != 1:
             raise ProviderInvalidResponseError(
                 "The remote AI provider returned an invalid query embedding."
@@ -150,11 +170,14 @@ class RemoteGroundedPipeline:
             for item in selected_evidence
         ]
 
-        generation = await self._generate_with_one_structured_retry(question, excerpts)
+        generation = await self._generate_with_one_structured_retry(
+            project_id, policy_revision, question, excerpts
+        )
         if not generation.claims:
             raise GroundingVerificationError(
                 "The remote model found insufficient evidence for a grounded answer."
             )
+        self.repository.assert_nebius_policy(project_id, policy_revision)
         verification = await self.model.verify(generation, excerpts)
         supported_ids = set(verification.supported_claim_ids)
         supported_claims = tuple(
@@ -185,11 +208,17 @@ class RemoteGroundedPipeline:
         )
 
     async def _generate_with_one_structured_retry(
-        self, question: str, evidence: list[EvidenceExcerpt]
+        self,
+        project_id: str,
+        policy_revision: int,
+        question: str,
+        evidence: list[EvidenceExcerpt],
     ) -> GenerationResult:
+        self.repository.assert_nebius_policy(project_id, policy_revision)
         try:
             return await self.model.generate(question, evidence)
         except ProviderInvalidResponseError:
+            self.repository.assert_nebius_policy(project_id, policy_revision)
             return await self.model.generate(question, evidence)
 
 

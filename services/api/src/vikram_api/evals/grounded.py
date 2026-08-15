@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,8 @@ from vikram_api.config import Settings
 from vikram_api.domain.models import DomainError, ProviderInvalidResponseError
 from vikram_api.providers.hybrid import RetrievalCandidate, hybrid_rank
 from vikram_api.providers.nebius import (
+    GENERATION_PROMPT_VERSION,
+    VERIFICATION_PROMPT_VERSION,
     EvidenceExcerpt,
     NebiusEmbeddingProvider,
     NebiusGroundedModelProvider,
@@ -85,12 +88,16 @@ def validate_fixture_threshold_shape(fixture: EvalFixture) -> None:
 
 
 async def run_live(
-    fixture: EvalFixture, settings: Settings, *, zdr_attested: bool
+    fixture: EvalFixture,
+    settings: Settings,
+    *,
+    zdr_attested: bool,
+    benchmark_permission_attested: bool,
 ) -> dict[str, object]:
-    if not zdr_attested:
-        raise RuntimeError(
-            "Attest that organization-level Nebius ZDR is enabled before running live evaluation."
-        )
+    require_live_attestations(
+        zdr_attested=zdr_attested,
+        benchmark_permission_attested=benchmark_permission_attested,
+    )
     if not settings.nebius_api_key:
         raise RuntimeError("Set NEBIUS_API_KEY locally before running the live evaluation.")
     client = NebiusHttpClient(
@@ -182,7 +189,7 @@ async def _evaluate_case(
             retrieved_evidence_ids=retrieved_ids,
             retrieval_hit=retrieval_hit,
             grounded_success=False,
-            negative_success=not case.answerable,
+            negative_success=False,
             emitted_claims=0,
             valid_verified_claims=0,
             error_code=error.code,
@@ -240,8 +247,10 @@ def build_report(
         "created_at": datetime.now(UTC).isoformat(),
         "provider": "nebius-token-factory",
         "generation_model": settings.nebius_generation_model,
+        "generation_prompt_version": GENERATION_PROMPT_VERSION,
         "embedding_model": settings.nebius_embedding_model,
         "embedding_dimensions": settings.nebius_embedding_dimensions,
+        "verification_prompt_version": VERIFICATION_PROMPT_VERSION,
         "model_metadata": model_metadata,
         "metrics": metrics,
         "passed": passed,
@@ -266,8 +275,19 @@ def _required_model_metadata(
     return [{key: value for key, value in item.items() if key in allowed} for item in records]
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Vikram's private grounded-answer evaluation.")
+def require_live_attestations(*, zdr_attested: bool, benchmark_permission_attested: bool) -> None:
+    if not benchmark_permission_attested:
+        raise RuntimeError(
+            "Attest that written confirmation from Nebius or qualified counsel has been obtained for this thresholded live evaluation."
+        )
+    if not zdr_attested:
+        raise RuntimeError(
+            "Attest that organization-level Nebius ZDR is enabled before running live evaluation."
+        )
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Vikram's grounded-answer evaluation.")
     parser.add_argument(
         "--fixture",
         type=Path,
@@ -279,8 +299,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Attest that organization-level Nebius Zero Data Retention is enabled.",
     )
+    parser.add_argument(
+        "--attest-benchmark-permission",
+        action="store_true",
+        help=(
+            "Attest that written confirmation from Nebius or qualified counsel has been "
+            "obtained for this thresholded live evaluation."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=Path(".vikram/evals"))
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main() -> None:
@@ -290,11 +318,22 @@ def main() -> None:
     if args.validate_only:
         print(f"Validated {len(fixture.cases)} synthetic grounded-answer cases.")
         return
-    settings = Settings(
-        provider_mode="nebius", api_token="evaluation-only-capability-token-000000000000"
-    )
     try:
-        report = asyncio.run(run_live(fixture, settings, zdr_attested=args.attest_zdr))
+        require_live_attestations(
+            zdr_attested=args.attest_zdr,
+            benchmark_permission_attested=args.attest_benchmark_permission,
+        )
+        settings = Settings(
+            provider_mode="nebius", api_token="evaluation-only-capability-token-000000000000"
+        )
+        report = asyncio.run(
+            run_live(
+                fixture,
+                settings,
+                zdr_attested=args.attest_zdr,
+                benchmark_permission_attested=args.attest_benchmark_permission,
+            )
+        )
     except (DomainError, RuntimeError) as error:
         print(f"Evaluation stopped: {error}", file=sys.stderr)
         raise SystemExit(2) from None

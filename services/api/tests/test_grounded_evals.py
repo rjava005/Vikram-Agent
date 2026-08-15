@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from vikram_api.config import Settings
+from vikram_api.domain.models import ProviderTimeoutError
 from vikram_api.evals.grounded import (
     CaseResult,
+    EvalCase,
+    EvalEvidence,
+    _evaluate_case,
     build_report,
     load_fixture,
+    main,
+    parse_args,
+    run_live,
     validate_fixture_threshold_shape,
 )
+from vikram_api.providers.nebius import GENERATION_PROMPT_VERSION, VERIFICATION_PROMPT_VERSION
 
 
 def fixture_path() -> Path:
@@ -55,5 +67,60 @@ def test_report_thresholds_are_explicit_and_redacted() -> None:
     )
     assert report["passed"] is True
     assert report["metrics"]["retrieval_recall_at_4"] == 11 / 12
+    assert report["generation_prompt_version"] == GENERATION_PROMPT_VERSION
+    assert report["verification_prompt_version"] == VERIFICATION_PROMPT_VERSION
     assert "question" not in str(report)
     assert "text" not in str(report)
+
+
+def test_provider_timeout_does_not_count_as_negative_success() -> None:
+    class Embeddings:
+        async def embed_batch(self, _texts: list[str]) -> object:
+            return SimpleNamespace(vectors=((1.0, 0.0),))
+
+    class TimeoutModel:
+        async def generate(self, _question: str, _evidence: object) -> object:
+            raise ProviderTimeoutError("Provider timed out during a negative case.")
+
+    result = asyncio.run(
+        _evaluate_case(
+            EvalCase(
+                id="negative-timeout",
+                question="What does phase margin mean?",
+                answerable=False,
+                relevant_evidence_ids=[],
+            ),
+            [EvalEvidence(id="evidence-1", text="Phase margin measures stability distance.")],
+            ((1.0, 0.0),),
+            Embeddings(),  # type: ignore[arg-type]
+            TimeoutModel(),  # type: ignore[arg-type]
+        )
+    )
+    assert result.error_code == "provider_timeout"
+    assert result.negative_success is False
+
+
+def test_live_eval_requires_explicit_benchmark_permission_before_key_or_model_calls() -> None:
+    fixture = load_fixture(fixture_path())
+    with pytest.raises(RuntimeError, match="written confirmation from Nebius or qualified counsel"):
+        asyncio.run(
+            run_live(
+                fixture,
+                Settings(nebius_api_key=""),
+                zdr_attested=True,
+                benchmark_permission_attested=False,
+            )
+        )
+    args = parse_args(["--attest-benchmark-permission"])
+    assert args.attest_benchmark_permission is True
+
+
+def test_validate_only_remains_offline(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["grounded-eval", "--fixture", str(fixture_path()), "--validate-only"],
+    )
+    main()
+    assert "Validated 16 synthetic grounded-answer cases." in capsys.readouterr().out

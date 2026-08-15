@@ -122,6 +122,10 @@ class SqliteRepository:
         record["zdr_attested"] = bool(record["zdr_attested"])
         return record
 
+    def assert_nebius_policy(self, project_id: str, expected_revision: int) -> None:
+        with self.connect() as connection:
+            self._assert_nebius_policy(connection, project_id, expected_revision)
+
     def update_ai_policy(
         self,
         *,
@@ -167,18 +171,20 @@ class SqliteRepository:
         project_id: str,
         provider_id: str,
         model_id: str,
+        expected_dimensions: int,
         content_hashes: dict[str, str],
     ) -> dict[str, tuple[float, ...]]:
         if not content_hashes:
             return {}
         placeholders = ",".join("?" for _ in content_hashes)
-        parameters = [project_id, provider_id, model_id, *content_hashes]
+        parameters = [project_id, provider_id, model_id, expected_dimensions, *content_hashes]
         with self.connect() as connection:
             rows = connection.execute(
                 f"""
                 SELECT evidence_id, content_sha256, dimensions, vector_blob
                 FROM evidence_embeddings
                 WHERE project_id = ? AND provider_id = ? AND model_id = ?
+                  AND dimensions = ?
                   AND evidence_id IN ({placeholders})
                 """,
                 parameters,
@@ -202,6 +208,7 @@ class SqliteRepository:
         provider_id: str,
         model_id: str,
         records: list[tuple[str, str, tuple[float, ...]]],
+        expected_policy_revision: int,
         created_at: str,
     ) -> None:
         if not records:
@@ -220,6 +227,7 @@ class SqliteRepository:
             for evidence_id, content_sha256, vector in records
         ]
         with self.transaction() as connection:
+            self._assert_nebius_policy(connection, project_id, expected_policy_revision)
             connection.executemany(
                 """
                 INSERT INTO evidence_embeddings(
@@ -329,8 +337,17 @@ class SqliteRepository:
         answer_run: dict[str, Any],
         retrieval_candidates: list[dict[str, Any]],
         claim_verifications: list[dict[str, Any]],
+        expected_ai_policy_revision: int | None = None,
     ) -> None:
         with self.transaction() as connection:
+            if answer_run.get("provider_mode") == "nebius":
+                if expected_ai_policy_revision is None:
+                    raise ValueError("remote answers require an AI policy revision")
+                self._assert_nebius_policy(
+                    connection,
+                    str(answer["project_id"]),
+                    expected_ai_policy_revision,
+                )
             connection.execute(
                 """
                 INSERT INTO answers(id, project_id, question, answer_text, grounding, provider_id, prompt_version, created_at)
@@ -381,6 +398,32 @@ class SqliteRepository:
                 """,
                 claim_verifications,
             )
+
+    @staticmethod
+    def _assert_nebius_policy(
+        connection: sqlite3.Connection, project_id: str, expected_revision: int
+    ) -> None:
+        row = connection.execute(
+            """
+            SELECT mode, zdr_attested, revision
+            FROM project_ai_policies
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            project_exists = connection.execute(
+                "SELECT 1 FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
+            if project_exists is None:
+                raise NotFoundError("Project not found.")
+            raise RuntimeError("Project AI policy is missing after migration.")
+        if (
+            row["mode"] != "nebius"
+            or not bool(row["zdr_attested"])
+            or int(row["revision"]) != expected_revision
+        ):
+            raise ConflictError("Remote AI policy changed; the in-flight run was canceled.")
 
     def get_answer_record(self, answer_id: str) -> dict[str, Any]:
         with self.connect() as connection:

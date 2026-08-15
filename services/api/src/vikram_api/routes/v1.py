@@ -52,10 +52,10 @@ def get_workspace(project_id: str, service: ServiceDependency) -> WorkspaceRespo
 
 
 @router.put("/projects/{project_id}/ai-policy", response_model=AiPolicyResponse)
-def update_ai_policy(
+async def update_ai_policy(
     project_id: str, payload: AiPolicyUpdate, service: ServiceDependency
 ) -> AiPolicyResponse:
-    return service.set_ai_policy(project_id, payload)
+    return await service.set_ai_policy(project_id, payload)
 
 
 @router.post(

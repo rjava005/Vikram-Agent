@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -152,6 +153,184 @@ def test_remote_answer_requires_policy_then_caches_embeddings(tmp_path: Path) ->
             if path.endswith("/embeddings") and not str(payload["input"][0]).startswith("Instruct:")
         ]
         assert len(document_embedding_calls) == 1
+
+
+def test_wrong_dimension_cached_embedding_is_ignored_and_reembedded(tmp_path: Path) -> None:
+    provider = NebiusMock()
+    with configured_client(tmp_path, provider) as client:
+        project = create_remote_project(client)
+        enabled = client.put(
+            f"/api/v1/projects/{project['id']}/ai-policy",
+            json={"mode": "nebius", "zdr_attested": True, "expected_revision": 0},
+        )
+        assert enabled.status_code == 200
+        repository = client.app.state.vikram_service.repository
+        evidence = repository.list_evidence(str(project["id"]))[0]
+        content_hash = hashlib.sha256(evidence.content.encode("utf-8")).hexdigest()
+        repository.store_embeddings(
+            project_id=str(project["id"]),
+            provider_id="nebius-token-factory",
+            model_id="Qwen/Qwen3-Embedding-8B",
+            records=[(evidence.id, content_hash, (1.0, 0.0, 0.0))],
+            expected_policy_revision=1,
+            created_at="2026-08-14T00:00:00Z",
+        )
+
+        answer = client.post(
+            f"/api/v1/projects/{project['id']}/answers",
+            json={"question": "What does phase margin measure?"},
+        )
+        assert answer.status_code == 201, answer.text
+        document_embedding_calls = [
+            payload
+            for path, payload in provider.requests
+            if path.endswith("/embeddings") and not str(payload["input"][0]).startswith("Instruct:")
+        ]
+        assert len(document_embedding_calls) == 1
+        cached = repository.get_cached_embeddings(
+            project_id=str(project["id"]),
+            provider_id="nebius-token-factory",
+            model_id="Qwen/Qwen3-Embedding-8B",
+            expected_dimensions=32,
+            content_hashes={evidence.id: content_hash},
+        )
+        assert len(cached[evidence.id]) == 32
+
+
+def test_oversized_evidence_fails_before_any_provider_call(tmp_path: Path) -> None:
+    provider = NebiusMock()
+    app = create_app(
+        Settings(
+            data_dir=tmp_path / "data",
+            provider_mode="nebius",
+            api_token=TOKEN,
+            nebius_api_key="test-key-never-logged",
+            nebius_embedding_dimensions=32,
+            nebius_max_evidence_characters=1_000,
+        ),
+        remote_transport=httpx.MockTransport(provider),
+    )
+    with TestClient(app, headers={API_TOKEN_HEADER: TOKEN}) as client:
+        project = client.post("/api/v1/projects", json={"name": "Oversized"}).json()
+        imported = client.post(
+            f"/api/v1/projects/{project['id']}/sources",
+            files={
+                "file": (
+                    "oversized.md",
+                    ("# Large section\n" + ("x" * 1_001)).encode(),
+                    "text/markdown",
+                )
+            },
+        )
+        assert imported.status_code == 201
+        enabled = client.put(
+            f"/api/v1/projects/{project['id']}/ai-policy",
+            json={"mode": "nebius", "zdr_attested": True, "expected_revision": 0},
+        )
+        assert enabled.status_code == 200
+
+        rejected = client.post(
+            f"/api/v1/projects/{project['id']}/answers",
+            json={"question": "What is in the section?"},
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["code"] == "remote_index_limit"
+        assert provider.requests == []
+
+
+def test_revocation_during_embedding_cancels_run_without_cache_or_answer(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        embedding_started = asyncio.Event()
+        embedding_cancelled = asyncio.Event()
+        release_embedding = asyncio.Event()
+        provider_requests: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            provider_requests.append(request.url.path)
+            embedding_started.set()
+            try:
+                await release_embedding.wait()
+            except asyncio.CancelledError:
+                embedding_cancelled.set()
+                raise
+            raise AssertionError("revocation did not cancel the provider request")
+
+        app = create_app(
+            Settings(
+                data_dir=tmp_path / "data",
+                provider_mode="nebius",
+                api_token=TOKEN,
+                nebius_api_key="test-key-never-logged",
+                nebius_embedding_dimensions=32,
+            ),
+            remote_transport=httpx.MockTransport(handler),
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                headers={API_TOKEN_HEADER: TOKEN},
+            ) as client,
+        ):
+            project = (await client.post("/api/v1/projects", json={"name": "Revoke"})).json()
+            imported = await client.post(
+                f"/api/v1/projects/{project['id']}/sources",
+                files={
+                    "file": (
+                        "control.md",
+                        b"# Stability\nPhase margin measures stability.",
+                        "text/markdown",
+                    )
+                },
+            )
+            assert imported.status_code == 201
+            enabled = await client.put(
+                f"/api/v1/projects/{project['id']}/ai-policy",
+                json={"mode": "nebius", "zdr_attested": True, "expected_revision": 0},
+            )
+            assert enabled.status_code == 200
+            answer_task = asyncio.create_task(
+                client.post(
+                    f"/api/v1/projects/{project['id']}/answers",
+                    json={"question": "What does phase margin measure?"},
+                )
+            )
+            await asyncio.wait_for(embedding_started.wait(), timeout=2)
+            try:
+                revoked = await asyncio.wait_for(
+                    client.put(
+                        f"/api/v1/projects/{project['id']}/ai-policy",
+                        json={
+                            "mode": "local",
+                            "zdr_attested": False,
+                            "expected_revision": 1,
+                        },
+                    ),
+                    timeout=2,
+                )
+            finally:
+                release_embedding.set()
+            assert revoked.status_code == 200
+            assert revoked.json()["mode"] == "local"
+            canceled_answer = await answer_task
+            assert canceled_answer.status_code == 409
+            assert canceled_answer.json()["code"] == "conflict"
+            await asyncio.wait_for(embedding_cancelled.wait(), timeout=2)
+            assert provider_requests == ["/v1/embeddings"]
+            repository = app.state.vikram_service.repository
+            with repository.connect() as connection:
+                embedding_count = connection.execute(
+                    "SELECT COUNT(*) FROM evidence_embeddings"
+                ).fetchone()[0]
+                answer_count = connection.execute("SELECT COUNT(*) FROM answers").fetchone()[0]
+            assert embedding_count == 0
+            assert answer_count == 0
+
+    asyncio.run(scenario())
 
 
 def test_failed_remote_verification_does_not_persist_answer(tmp_path: Path) -> None:
