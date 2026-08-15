@@ -100,5 +100,57 @@ class ZdrAttestationRequiredError(DomainError):
     code = "zdr_attestation_required"
 
 
+class ProviderAuthenticationError(DomainError):
+    status_code = 502
+    title = "Provider authentication failed"
+    problem_type = "https://vikram.local/problems/provider-authentication"
+    code = "provider_authentication"
+
+
+class ProviderRateLimitError(DomainError):
+    status_code = 429
+    title = "Provider rate limit reached"
+    problem_type = "https://vikram.local/problems/provider-rate-limit"
+    code = "provider_rate_limit"
+    retryable = True
+
+
+class ProviderTimeoutError(DomainError):
+    status_code = 504
+    title = "Provider timed out"
+    problem_type = "https://vikram.local/problems/provider-timeout"
+    code = "provider_timeout"
+    retryable = True
+
+
+class ProviderUnavailableError(DomainError):
+    status_code = 503
+    title = "Provider unavailable"
+    problem_type = "https://vikram.local/problems/provider-unavailable"
+    code = "provider_unavailable"
+    retryable = True
+
+
+class ProviderInvalidResponseError(DomainError):
+    status_code = 502
+    title = "Provider returned invalid output"
+    problem_type = "https://vikram.local/problems/provider-invalid-output"
+    code = "provider_invalid_output"
+
+
+class GroundingVerificationError(DomainError):
+    status_code = 422
+    title = "Answer could not be grounded"
+    problem_type = "https://vikram.local/problems/grounding-verification"
+    code = "grounding_verification"
+
+
+class RemoteIndexLimitError(DomainError):
+    status_code = 422
+    title = "Remote indexing limit reached"
+    problem_type = "https://vikram.local/problems/remote-index-limit"
+    code = "remote_index_limit"
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)

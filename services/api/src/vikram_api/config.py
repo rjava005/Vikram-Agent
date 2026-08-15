@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="VIKRAM_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="VIKRAM_", extra="ignore", populate_by_name=True)
 
     data_dir: Path = Field(default=Path(".vikram"))
     host: str = "127.0.0.1"
@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     nebius_api_key: str = Field(default="", validation_alias="NEBIUS_API_KEY", repr=False)
     nebius_generation_model: str = "Qwen/Qwen3-30B-A3B-Instruct-2507"
     nebius_embedding_model: str = "Qwen/Qwen3-Embedding-8B"
+    nebius_timeout_seconds: float = Field(default=45.0, gt=0, le=60)
+    nebius_embedding_dimensions: int = Field(default=4096, ge=32, le=4096)
+    nebius_embedding_batch_size: int = Field(default=16, ge=1, le=64)
+    nebius_max_evidence_units: int = Field(default=256, ge=1, le=2048)
+    nebius_max_evidence_characters: int = Field(default=12_000, ge=1_000, le=24_000)
+    nebius_retrieval_limit: int = Field(default=4, ge=1, le=4)
 
     @property
     def remote_ai_configured(self) -> bool:

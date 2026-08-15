@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import secrets
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,22 +20,58 @@ from vikram_api.providers.fake import (
     DeterministicTextToSpeechProvider,
 )
 from vikram_api.providers.interfaces import LocalBlobStorage, SystemClock
+from vikram_api.providers.nebius import (
+    NebiusEmbeddingProvider,
+    NebiusGroundedModelProvider,
+    NebiusHttpClient,
+)
 from vikram_api.repositories.sqlite import SqliteRepository
 from vikram_api.routes.v1 import router as v1_router
+from vikram_api.services.grounded import RemoteGroundedPipeline
 from vikram_api.services.workspace import VikramService
 
 API_TOKEN_HEADER = "X-Vikram-Token"
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    remote_grounding: RemoteGroundedPipeline | None = None,
+    remote_transport: httpx.AsyncBaseTransport | None = None,
+) -> FastAPI:
     runtime = settings or Settings()
     if len(runtime.api_token) < 43:
         raise RuntimeError("VIKRAM_API_TOKEN must be a high-entropy per-launch local capability.")
-    if runtime.provider_mode != "fake":
-        raise RuntimeError(
-            "Only VIKRAM_PROVIDER_MODE=fake is available in this milestone; real providers require explicit configuration and evaluation."
-        )
     repository = SqliteRepository(runtime.database_path)
+    owned_remote_client: NebiusHttpClient | None = None
+    if runtime.provider_mode == "nebius":
+        if not runtime.nebius_api_key:
+            raise RuntimeError("NEBIUS_API_KEY is required when VIKRAM_PROVIDER_MODE=nebius.")
+        if remote_grounding is None:
+            owned_remote_client = NebiusHttpClient(
+                api_key=runtime.nebius_api_key,
+                timeout_seconds=runtime.nebius_timeout_seconds,
+                transport=remote_transport,
+            )
+            remote_embeddings = NebiusEmbeddingProvider(
+                owned_remote_client,
+                model_id=runtime.nebius_embedding_model,
+                dimensions=runtime.nebius_embedding_dimensions,
+                max_batch_size=runtime.nebius_embedding_batch_size,
+                max_input_characters=runtime.nebius_max_evidence_characters,
+            )
+            remote_model = NebiusGroundedModelProvider(
+                owned_remote_client,
+                generation_model_id=runtime.nebius_generation_model,
+                max_evidence_items=runtime.nebius_retrieval_limit,
+                max_evidence_characters=runtime.nebius_max_evidence_characters,
+            )
+            remote_grounding = RemoteGroundedPipeline(
+                settings=runtime,
+                repository=repository,
+                embeddings=remote_embeddings,
+                model=remote_model,
+            )
     service = VikramService(
         settings=runtime,
         repository=repository,
@@ -43,8 +82,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         speech_to_text=DeterministicSpeechToTextProvider(),
         text_to_speech=DeterministicTextToSpeechProvider(),
         clock=SystemClock(),
+        remote_grounding=remote_grounding,
     )
-    app = FastAPI(title="Vikram API", version="1.0.0", docs_url="/docs", redoc_url=None)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        if owned_remote_client is not None:
+            await owned_remote_client.aclose()
+
+    app = FastAPI(
+        title="Vikram API",
+        version="1.0.0",
+        docs_url="/docs",
+        redoc_url=None,
+        lifespan=lifespan,
+    )
     app.state.vikram_service = service
     app.state.settings = runtime
     app.add_middleware(

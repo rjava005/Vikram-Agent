@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import struct
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -159,6 +160,79 @@ class SqliteRepository:
                     "DELETE FROM evidence_embeddings WHERE project_id = ?", (project_id,)
                 )
         return self.get_ai_policy(project_id)
+
+    def get_cached_embeddings(
+        self,
+        *,
+        project_id: str,
+        provider_id: str,
+        model_id: str,
+        content_hashes: dict[str, str],
+    ) -> dict[str, tuple[float, ...]]:
+        if not content_hashes:
+            return {}
+        placeholders = ",".join("?" for _ in content_hashes)
+        parameters = [project_id, provider_id, model_id, *content_hashes]
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT evidence_id, content_sha256, dimensions, vector_blob
+                FROM evidence_embeddings
+                WHERE project_id = ? AND provider_id = ? AND model_id = ?
+                  AND evidence_id IN ({placeholders})
+                """,
+                parameters,
+            ).fetchall()
+        cached: dict[str, tuple[float, ...]] = {}
+        for row in rows:
+            evidence_id = str(row["evidence_id"])
+            dimensions = int(row["dimensions"])
+            blob = bytes(row["vector_blob"])
+            if content_hashes.get(evidence_id) != row["content_sha256"]:
+                continue
+            if len(blob) != dimensions * 4:
+                raise RuntimeError("Cached embedding has an invalid float32 payload.")
+            cached[evidence_id] = struct.unpack(f"<{dimensions}f", blob)
+        return cached
+
+    def store_embeddings(
+        self,
+        *,
+        project_id: str,
+        provider_id: str,
+        model_id: str,
+        records: list[tuple[str, str, tuple[float, ...]]],
+        created_at: str,
+    ) -> None:
+        if not records:
+            return
+        rows = [
+            (
+                project_id,
+                evidence_id,
+                provider_id,
+                model_id,
+                content_sha256,
+                len(vector),
+                struct.pack(f"<{len(vector)}f", *vector),
+                created_at,
+            )
+            for evidence_id, content_sha256, vector in records
+        ]
+        with self.transaction() as connection:
+            connection.executemany(
+                """
+                INSERT INTO evidence_embeddings(
+                    project_id, evidence_id, provider_id, model_id, content_sha256,
+                    dimensions, vector_blob, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(project_id, evidence_id, provider_id, model_id, content_sha256)
+                DO UPDATE SET dimensions = excluded.dimensions,
+                              vector_blob = excluded.vector_blob,
+                              created_at = excluded.created_at
+                """,
+                rows,
+            )
 
     def create_source(
         self,

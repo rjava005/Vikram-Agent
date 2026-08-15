@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
@@ -78,10 +80,25 @@ async def import_source(
     response_model=AnswerResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_answer(
-    project_id: str, payload: AnswerCreate, service: ServiceDependency
+async def create_answer(
+    project_id: str,
+    payload: AnswerCreate,
+    request: Request,
+    service: ServiceDependency,
 ) -> AnswerResponse:
-    return service.answer(project_id, payload.question)
+    answer_task = asyncio.create_task(service.answer(project_id, payload.question))
+    try:
+        while not answer_task.done():
+            await asyncio.wait({answer_task}, timeout=0.1)
+            if await request.is_disconnected():
+                answer_task.cancel()
+                raise asyncio.CancelledError
+        return await answer_task
+    finally:
+        if not answer_task.done():
+            answer_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await answer_task
 
 
 @router.put("/answers/{answer_id}/feedback", response_model=FeedbackResponse)

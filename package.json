@@ -14,7 +14,7 @@
     "format:check": "corepack pnpm -r format:check && uv run --project services/api --extra dev ruff format services/api --check",
     "lint": "node --check scripts/dev.mjs && corepack pnpm -r lint && uv run --project services/api --extra dev ruff check services/api",
     "typecheck": "corepack pnpm -r typecheck && uv run --project services/api --extra dev mypy --config-file services/api/pyproject.toml services/api/src",
-    "test": "corepack pnpm -r test && uv run --project services/api --extra dev pytest services/api/tests -q --basetemp .pytest-tmp",
+    "test": "corepack pnpm -r test && uv run --project services/api --extra dev pytest services/api/tests -q -p no:cacheprovider --basetemp .vikram/pytest",
     "smoke": "corepack pnpm --filter @vikram/desktop smoke"
   }
 }

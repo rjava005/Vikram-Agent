@@ -19,9 +19,10 @@ This milestone does not add streaming, a general agent framework, cloud storage,
 - [x] 2026-08-15 05:00Z — Re-read repository instructions, product/architecture/UI/stack documents, and inspected the current tree, manifests, accepted MVP, and Git state.
 - [x] 2026-08-15 05:00Z — Record product, privacy, retrieval, provider, and delivery decisions in this active ExecPlan.
 - [x] 2026-08-15 05:03Z — Freeze the v1 policy/runtime/provenance/problem contract additions, add the `0002_real_ai_quality.sql` migration, prove upgrade from `0001`, and verify both migrations are packaged in the wheel.
-- [ ] Implement project-level consent/ZDR policy and safe runtime/provider configuration.
-- [ ] Implement Nebius embeddings, hybrid retrieval, structured generation, claim verification, failure classification, and provenance persistence.
-- [ ] Add API unit, integration, security/privacy, migration, and synthetic evaluation coverage.
+- [x] 2026-08-15 05:03Z — Implement project-level consent/ZDR policy and safe runtime/provider configuration while retaining local-by-default projects.
+- [x] 2026-08-15 05:21Z — Implement direct-httpx Nebius embeddings, float32 caching, hybrid/RRF retrieval, structured generation, separate claim verification, request cancellation, classified failures, and transactional provenance persistence.
+- [x] 2026-08-15 05:21Z — Add and pass API provider, retry, cancellation, prompt-injection, cache, migration, no-call-before-consent, verified-grounding, and no-persistence-on-verification-failure tests (24 tests total).
+- [ ] Add the committed synthetic evaluation fixture and redacted mock/live evaluation runner.
 - [ ] Implement the desktop opt-in, ZDR attestation, remote-AI status, activity, cancellation, verified-answer, and classified-error experience.
 - [ ] Run fake and mocked-provider repository checks, then run the opt-in live Nebius evaluation when a locally configured key is available.
 - [ ] Request read-only owner review, resolve findings, update documentation and this plan, and move it to `plans/completed/` only after acceptance passes.
@@ -78,7 +79,7 @@ Verification: run formatter/lint/type checks, contract tests, policy route tests
 
 ### Milestone 2 — Nebius provider and grounded pipeline
 
-Add only the official OpenAI Python SDK as a production dependency. Implement async Nebius embedding/model adapters behind the provider interfaces, provider failure classification, float32 cache serialization, lexical/vector ranking and reciprocal-rank fusion, structured generation, separate structured verification, and answer-run persistence. Keep provider selection in app wiring/configuration rather than domain logic.
+Promote the already locked `httpx>=0.28,<1` client from development to production instead of adding an AI framework or the OpenAI SDK. Implement async Nebius embedding/model adapters behind the provider interfaces, provider failure classification, float32 cache serialization, lexical/vector ranking and reciprocal-rank fusion, structured generation, separate structured verification, and answer-run persistence. Keep provider selection in app wiring/configuration rather than domain logic.
 
 Verification: unit tests use an injected mock transport and never make network calls. Cover caching, ranking determinism, malformed output, prompt-injection-shaped evidence, auth/rate-limit/timeout/unavailable classification, cancellation, one controlled retry, unsupported claims, all-negative questions, index limits, no-call-without-consent, no partial persistence, and redacted logs. Safe stopping point: fake mode passes all prior tests; mocked Nebius mode proves the full API answer path.
 
@@ -131,7 +132,8 @@ SQLite migrations are forward-only in normal use. Before manual rollback, copy t
 - 2026-08-14, main agent — Preserve `fake` as the default runtime and never silently fall back from a consented remote request. Silent fallback would obscure both quality and the active data boundary.
 - 2026-08-14, main agent — Use local SQLite vector caching and bounded in-process hybrid fusion for this milestone. A vector database or worker is unnecessary below the explicit 256-unit limit and would add infrastructure before evaluation proves the need.
 - 2026-08-14, main agent — Delay streaming until verification can gate all visible text. This prevents transient unsupported claims from appearing in the UI.
-- 2026-08-14, main agent — Add the provider SDK only to `services/api/pyproject.toml` and remove the obsolete root `requirements.txt` when lock/update verification passes, leaving one authoritative Python manifest.
+- 2026-08-14, main agent — Promote the already locked BSD-3-Clause `httpx>=0.28,<1` client to the service's production dependencies and remove the obsolete root `requirements.txt`, leaving one authoritative Python manifest. Direct HTTP is the smallest compatible set, permits an explicit wall-clock retry budget, and avoids adding the OpenAI SDK's new `httpx2` dependency solely for an OpenAI-compatible API.
+- 2026-08-14, main agent — Keep the 30B Instruct model as the default lower-cost candidate and make the 235B Instruct model an explicit quality override until live account availability, latency, and cost are measured. This is reversible through server environment configuration.
 
 ## Discoveries
 
@@ -141,6 +143,9 @@ SQLite migrations are forward-only in normal use. Before manual rollback, copy t
 - 2026-08-14 — `requirements.txt` contains an unbounded historical OpenAI dependency while `services/api/pyproject.toml` and `uv.lock` are the actual environment. The duplicate manifest must not remain authoritative.
 - 2026-08-14 — One user-owned untracked file, `examples/EGO_sEMG.md`, exists and is excluded from milestone changes.
 - 2026-08-14 — Nebius retired the initially considered `BAAI/bge-en-icl` public endpoint on 2026-04-13. The implementation candidate changed to the currently documented `Qwen/Qwen3-Embedding-8B`; authenticated model-list validation remains required before live acceptance.
+- 2026-08-14 — Nebius's live OpenAPI exposes chat completions, embeddings, rerank, responses, and model listing, but public documentation contains stale model examples. `GET /v1/models?verbose=true` is therefore an acceptance gate, not optional diagnostics.
+- 2026-08-14 — Current Nebius terms restrict competitive benchmarking. Vikram's committed fixtures and acceptance metrics remain private task-specific quality checks; publishing cross-provider comparisons requires separate legal review.
+- 2026-08-14 — Test directories created by an earlier sandboxed run (`.pytest-tmp` and `services/api/.pytest_cache`) are inaccessible to the current Windows user. The root test command now disables pytest's optional cache and uses the ignored `.vikram/pytest` temp path; no application or user data is deleted.
 
 ## Outcome and follow-ups
 

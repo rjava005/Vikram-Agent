@@ -52,6 +52,7 @@ from vikram_api.providers.interfaces import (
 )
 from vikram_api.providers.parsers import MarkdownParser, PdfParser
 from vikram_api.repositories.sqlite import SqliteRepository
+from vikram_api.services.grounded import RemoteGroundedPipeline
 
 
 def as_utc_text(value: datetime) -> str:
@@ -71,6 +72,7 @@ class VikramService:
         speech_to_text: SpeechToTextProvider,
         text_to_speech: TextToSpeechProvider,
         clock: Clock,
+        remote_grounding: RemoteGroundedPipeline | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -81,6 +83,7 @@ class VikramService:
         self.speech_to_text = speech_to_text
         self.text_to_speech = text_to_speech
         self.clock = clock
+        self.remote_grounding = remote_grounding
 
     def create_project(self, name: str) -> ProjectResponse:
         normalized = " ".join(name.split())
@@ -184,7 +187,17 @@ class VikramService:
         )
         return SourceResponse.model_validate(record)
 
-    def answer(self, project_id: str, question: str) -> AnswerResponse:
+    async def answer(self, project_id: str, question: str) -> AnswerResponse:
+        policy = AiPolicyResponse.model_validate(self.repository.get_ai_policy(project_id))
+        if policy.mode is AiMode.NEBIUS:
+            if self.remote_grounding is None or not self.settings.remote_ai_configured:
+                raise ProviderNotConfiguredError(
+                    "Remote AI is enabled for this project but is not configured in the API."
+                )
+            return await self._answer_remote(project_id, question)
+        return self._answer_local(project_id, question)
+
+    def _answer_local(self, project_id: str, question: str) -> AnswerResponse:
         self.repository.get_project(project_id)
         evidence = self.repository.list_evidence(project_id)
         retrieved = self.retrieval.search(
@@ -296,6 +309,129 @@ class VikramService:
                     "created_at": as_utc_text(created_at_value),
                 }
                 for claim in generated.claims
+            ],
+        )
+        return response
+
+    async def _answer_remote(self, project_id: str, question: str) -> AnswerResponse:
+        if self.remote_grounding is None:
+            raise ProviderNotConfiguredError("Remote AI is not configured in the API.")
+        self.repository.get_project(project_id)
+        evidence = self.repository.list_evidence(project_id)
+        created_at_value = self.clock.now()
+        run = await self.remote_grounding.answer(
+            project_id,
+            question,
+            evidence,
+            as_utc_text(created_at_value),
+        )
+        allowed = {candidate.evidence.id: candidate.evidence for candidate in run.retrieved}
+        for claim in run.answer.claims:
+            if not claim.evidence_ids or any(item not in allowed for item in claim.evidence_ids):
+                raise UnprocessableSourceError("The verified answer contained an invalid citation.")
+        answer_id = str(uuid4())
+        claims = [
+            ClaimResponse(id=claim.id, text=claim.text, evidence_ids=list(claim.evidence_ids))
+            for claim in run.answer.claims
+        ]
+        citations: list[CitationResponse] = []
+        citation_records: list[dict[str, Any]] = []
+        ordinal = 0
+        for claim in run.answer.claims:
+            for evidence_id in claim.evidence_ids:
+                item = allowed[evidence_id]
+                citation_id = str(uuid4())
+                excerpt = " ".join(item.content.split())[:320]
+                citations.append(
+                    CitationResponse(
+                        id=citation_id,
+                        evidence_id=item.id,
+                        source_id=item.source_id,
+                        source_version_id=item.source_version_id,
+                        source_name=item.source_name,
+                        locator=self._locator(item),
+                        excerpt=excerpt,
+                        supported_claim_ids=[claim.id],
+                    )
+                )
+                citation_records.append(
+                    {
+                        "id": citation_id,
+                        "answer_id": answer_id,
+                        "evidence_id": item.id,
+                        "ordinal": ordinal,
+                        "excerpt": excerpt,
+                        "claim_id": claim.id,
+                    }
+                )
+                ordinal += 1
+        response = AnswerResponse(
+            id=answer_id,
+            project_id=project_id,
+            question=question,
+            text=run.answer.text,
+            grounding=GroundingStatus.GROUNDED,
+            claims=claims,
+            citations=citations,
+            provider_id=run.generation.provider_id,
+            prompt_version=run.generation.prompt_version
+            or self.remote_grounding.model.prompt_version,
+            provenance=AnswerProvenance(
+                provider_mode="nebius",
+                verification=VerificationStatus.REMOTE_VERIFIED,
+                model_id=run.generation.model_id,
+                embedding_model_id=self.remote_grounding.embeddings.model_id,
+                retrieval_strategy=self.remote_grounding.retrieval_strategy,
+                verifier_model_id=run.verification.model_id,
+                verifier_prompt_version=run.verification.prompt_version,
+                candidate_count=len(run.candidates),
+                selected_evidence_count=len(run.retrieved),
+                generation_latency_ms=run.generation.latency_ms,
+                verification_latency_ms=run.verification.latency_ms,
+            ),
+            created_at=created_at_value,
+        )
+        selected_ids = {item.evidence.id for item in run.retrieved}
+        self.repository.create_answer(
+            answer=response.model_dump(mode="json"),
+            citations=citation_records,
+            answer_run={
+                "answer_id": answer_id,
+                "provider_mode": "nebius",
+                "model_id": run.generation.model_id,
+                "embedding_model_id": self.remote_grounding.embeddings.model_id,
+                "retrieval_strategy": self.remote_grounding.retrieval_strategy,
+                "verifier_model_id": run.verification.model_id,
+                "verifier_prompt_version": run.verification.prompt_version,
+                "candidate_count": len(run.candidates),
+                "selected_evidence_count": len(run.retrieved),
+                "generation_latency_ms": run.generation.latency_ms,
+                "verification_latency_ms": run.verification.latency_ms,
+                "input_tokens": run.input_tokens,
+                "output_tokens": run.output_tokens,
+                "created_at": as_utc_text(created_at_value),
+            },
+            retrieval_candidates=[
+                {
+                    "answer_id": answer_id,
+                    "evidence_id": candidate.evidence_id,
+                    "lexical_rank": candidate.lexical_rank,
+                    "semantic_rank": candidate.semantic_rank,
+                    "fused_score": candidate.fused_score,
+                    "selected": int(candidate.evidence_id in selected_ids),
+                }
+                for candidate in run.candidates
+            ],
+            claim_verifications=[
+                {
+                    "answer_id": answer_id,
+                    "claim_id": outcome.claim_id,
+                    "evidence_ids_json": json.dumps(list(outcome.evidence_ids)),
+                    "verdict": outcome.verdict,
+                    "reason": f"Remote verifier marked this claim {outcome.verdict}.",
+                    "created_at": as_utc_text(created_at_value),
+                }
+                for outcome in run.verification_outcomes
             ],
         )
         return response
